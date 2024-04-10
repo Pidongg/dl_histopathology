@@ -8,6 +8,7 @@ import os
 import glob
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 
 from tqdm import tqdm
 
@@ -35,7 +36,7 @@ def show_images(images):
     plt.show()
 
 
-def get_masks_from_mask(mask_path):
+def get_masks_from_mask(mask_path: os.path):
     """
     Takes a path to a mask image.
     Returns a Tensor of masks for each class present, and corresponding class indices.
@@ -51,7 +52,7 @@ def get_masks_from_mask(mask_path):
     return masks, obj_ids
 
 
-def split_and_show_masks(image_path, mask_path):
+def split_and_show_masks(image_path: os.path, mask_path: os.path) -> None:
     """ Takes an image and a mask, splits the mask by class, and displays the image with each mask overlaid. """
     image = read_image(image_path)
 
@@ -64,30 +65,39 @@ def split_and_show_masks(image_path, mask_path):
     show_images(drawn_masks)
 
 
-def show_bboxes(image_path, bboxes):
+def show_bboxes(image_path: os.path, bboxes: torch.Tensor) -> None:
     image = read_image(image_path)
 
     drawn_boxes = draw_bounding_boxes(image, bboxes, colors="red")
     show_images(drawn_boxes)
 
 
+def count_files_by_type(directory: os.path, file_extension: str) -> int:
+    """
+    :param directory: Path to a directory
+    :param file_extension: e.g. ".png", ".jpg"
+    :return: The number of files with the supplied extension inside the directory.
+    """
+    image_list = glob.glob(directory + "/*" + file_extension)
+    return len(image_list)
+
+
 class DataPreparer:
     def __init__(self, in_root_dir, out_root_dir):
         # in_root_dir and out_root_dir should each have subdirectories 'images' and 'masks'
-        self.in_root_dir = in_root_dir
-        self.out_root_dir = out_root_dir
+        self.in_root_dir = in_root_dir  # directory of the unprocessed dataset
+        self.out_root_dir = out_root_dir  # directory of the prepared dataset
 
-    def split_into_patches(self, img_dir: str, mask_dir: str, patch_width: int, patch_height: int):
+    def split_into_patches(self, img_dir: str, mask_dir: str, patch_width: int, patch_height: int,
+                           image_list: list[os.path]) -> None:
         """
         :param img_dir: name of image directory
         :param mask_dir: name of mask directory
         :param patch_width: width of each patch in pixels
         :param patch_height: height of each patch in pixels
+        :param image_list: list of paths to images to be split
         :return: None
         """
-
-        image_list = glob.glob(os.path.join(self.in_root_dir, img_dir) + "/*.png")
-
         out_img_dir = os.path.join(self.out_root_dir, img_dir)
         out_mask_dir = os.path.join(self.out_root_dir, mask_dir)
 
@@ -98,19 +108,20 @@ class DataPreparer:
         if not os.path.exists(out_img_dir):
             os.makedirs(out_img_dir)
 
-        for img_path in image_list:
+        for i in tqdm(range(len(image_list))):
+            img_path = image_list[i]
             # get image name and read image
             image_name = os.path.splitext(os.path.basename(img_path))[0]
             image = io.imread(img_path)
 
-            # based on image name, get path to matching mask and read mask
+            # based on image name, get path to matching mask and read it
             mask_path = glob.glob(os.path.join(self.in_root_dir, mask_dir, image_name) + "*")[0]
             mask = io.imread(mask_path)
 
             # divide image into patches
             img_patches = view_as_windows(image,
                                           (patch_width, patch_height, 3),
-                                          (3 * patch_width//4, 3 * patch_height//4, 3))
+                                          (3 * patch_width//4, 3 * patch_height//4, 3))  # overlap of 25%
             img_patches = img_patches.reshape(-1, patch_width, patch_height, 3)
 
             mask_patches = view_as_windows(mask,
@@ -118,15 +129,15 @@ class DataPreparer:
                                            (3 * patch_width//4, 3 * patch_height//4))
             mask_patches = mask_patches.reshape(-1, patch_width, patch_height)
 
-            for i in tqdm(range(len(img_patches))):
+            for j in range(len(img_patches)):
                 # save patches to directory
-                target_img_path = os.path.join(out_img_dir, image_name) + "_" + str(i) + ".png"
-                target_mask_path = os.path.join(out_mask_dir, image_name) + "_" + str(i) + ".png"
+                target_img_path = os.path.join(out_img_dir, image_name) + "_" + str(j) + ".png"
+                target_mask_path = os.path.join(out_mask_dir, image_name) + "_" + str(j) + ".png"
 
-                io.imsave(target_img_path, img_as_ubyte(img_patches[i]))
-                io.imsave(target_mask_path, mask_patches[i])
+                io.imsave(target_img_path, img_as_ubyte(img_patches[j]))
+                io.imsave(target_mask_path, mask_patches[j], check_contrast=False)  # suppress contrast warnings
 
-    def bboxes_from_one_mask(self, mask_path, yolo: bool = False):
+    def bboxes_from_one_mask(self, mask_path, yolo: bool = False) -> torch.Tensor:
         """
         :param yolo: True if YOLO-format label txt files are to be output.
         :param mask_path: The path to the mask to be processed.
@@ -139,7 +150,7 @@ class DataPreparer:
 
         if yolo:
             mask_name = os.path.splitext(os.path.basename(mask_path))[0]
-            out_label_dir = os.path.join(self.out_root_dir, "bbox_labels")
+            out_label_dir = os.path.join(self.out_root_dir, "labels")
 
             if not os.path.exists(out_label_dir):
                 os.makedirs(out_label_dir)
@@ -167,10 +178,35 @@ class DataPreparer:
         for mask_path in mask_list:
             bboxes = self.bboxes_from_one_mask(mask_path, yolo=yolo)
 
-            # for testing purposes- visualisation
+            # for testing purposes- visualisation code
             # image_name = os.path.splitext(os.path.basename(mask_path))[0] + '.png'
             # image_path = os.path.join(self.out_root_dir, "images", image_name)
             # split_and_show_masks(image_path, mask_path)
             # show_bboxes(image_path, bboxes)
 
+    def train_test_val_split(self, train: float, test: float, val: float, img_dir: str) -> dict[str, list[os.path]]:
+        """
+        :param train: Percentage of the dataset to use for training
+        :param test: Percentage to use for testing
+        :param val: Percentage to use for validation
+        :param img_dir: Name of directory which stores images
+        :return: After splitting the dataset into training, testing, and validation, returns a dictionary of lists of
+        image paths with the keys [train, test, val].
+        """
+        assert (train + test + val) == 1
 
+        image_list = glob.glob(os.path.join(self.in_root_dir, img_dir) + "/*.png")
+        image_list.sort()  # ensure the same order each time
+        n = len(image_list)
+        train_n = math.ceil(n * 0.8)
+        test_n = math.floor(n * 0.1)
+
+        train_img_list = image_list[:train_n]
+        test_img_list = image_list[train_n:train_n + test_n]
+        valid_img_list = image_list[train_n + test_n:]
+
+        return {
+            "train": train_img_list,
+            "test": test_img_list,
+            "valid": valid_img_list
+        }
