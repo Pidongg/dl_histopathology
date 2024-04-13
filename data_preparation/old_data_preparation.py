@@ -4,10 +4,6 @@
 from skimage.util.shape import view_as_windows
 from skimage.util import img_as_ubyte
 
-import os
-import glob
-import matplotlib.pyplot as plt
-import numpy as np
 import math
 
 from tqdm import tqdm
@@ -18,22 +14,9 @@ import torch
 from torchvision.io import read_image
 from torchvision.ops import masks_to_boxes
 from torchvision.utils import draw_segmentation_masks
-import torchvision.transforms.functional as F
 from torchvision.utils import draw_bounding_boxes
 
-
-def show_images(images):
-    """ Takes images (singular or a list) of type Image Tensor (Torch) and plots them. """
-    if not isinstance(images, list):
-        images = [images]
-    fix, axs = plt.subplots(ncols=len(images), squeeze=False)
-    for i, img in enumerate(images):
-        img = img.detach()
-        img = F.to_pil_image(img)
-        axs[0, i].imshow(np.asarray(img))
-        axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
-
-    plt.show()
+from utils import *
 
 
 def get_masks_from_mask(mask_path: os.path):
@@ -72,14 +55,7 @@ def show_bboxes(image_path: os.path, bboxes: torch.Tensor) -> None:
     show_images(drawn_boxes)
 
 
-def count_files_by_type(directory: os.path, file_extension: str) -> int:
-    """
-    :param directory: Path to a directory
-    :param file_extension: e.g. ".png", ".jpg"
-    :return: The number of files with the supplied extension inside the directory.
-    """
-    image_list = glob.glob(directory + "/*" + file_extension)
-    return len(image_list)
+
 
 
 class DataPreparer:
@@ -111,7 +87,7 @@ class DataPreparer:
         for i in tqdm(range(len(image_list))):
             img_path = image_list[i]
             # get image name and read image
-            image_name = os.path.splitext(os.path.basename(img_path))[0]
+            image_name = get_filename(img_path)
             image = io.imread(img_path)
 
             # based on image name, get path to matching mask and read it
@@ -137,10 +113,11 @@ class DataPreparer:
                 io.imsave(target_img_path, img_as_ubyte(img_patches[j]))
                 io.imsave(target_mask_path, mask_patches[j], check_contrast=False)  # suppress contrast warnings
 
-    def bboxes_from_one_mask(self, mask_path, yolo: bool = False) -> torch.Tensor:
+    def bboxes_from_one_mask(self, mask_path: os.path, set_type: str, yolo: bool = False) -> torch.Tensor:
         """
         :param yolo: True if YOLO-format label txt files are to be output.
         :param mask_path: The path to the mask to be processed.
+        :param set_type: "train", "test", or "val".
         :return: a Tensor containing one bounding box (x_min, y_min, x_max, y_max) for each class present.
         """
         mask = read_image(mask_path)
@@ -149,8 +126,8 @@ class DataPreparer:
         bboxes = masks_to_boxes(masks)
 
         if yolo:
-            mask_name = os.path.splitext(os.path.basename(mask_path))[0]
-            out_label_dir = os.path.join(self.out_root_dir, "labels")
+            mask_name = get_filename(mask_path)
+            out_label_dir = os.path.join(self.out_root_dir, "labels", set_type)
 
             if not os.path.exists(out_label_dir):
                 os.makedirs(out_label_dir)
@@ -172,17 +149,21 @@ class DataPreparer:
 
         return bboxes
 
-    def bboxes_from_multiple_masks(self, mask_dir, yolo=False):
+    def bboxes_from_multiple_masks(self, mask_dir, set_type, yolo=False):
         mask_list = glob.glob(os.path.join(self.out_root_dir, mask_dir) + "/*.png")
 
-        for mask_path in mask_list:
-            bboxes = self.bboxes_from_one_mask(mask_path, yolo=yolo)
+        for i in tqdm(range(len(mask_list))):
+            mask_path = mask_list[i]
+            bboxes = self.bboxes_from_one_mask(mask_path=mask_path, set_type=set_type, yolo=yolo)
 
             # for testing purposes- visualisation code
-            # image_name = os.path.splitext(os.path.basename(mask_path))[0] + '.png'
+            # image_name = get_filename(mask_path) + '.png'
             # image_path = os.path.join(self.out_root_dir, "images", image_name)
             # split_and_show_masks(image_path, mask_path)
             # show_bboxes(image_path, bboxes)
+
+
+
 
     def train_test_val_split(self, train: float, test: float, val: float, img_dir: str) -> dict[str, list[os.path]]:
         """
