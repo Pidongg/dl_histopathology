@@ -32,9 +32,8 @@ class DataPreparer:
 
     def split_into_patches(self, image_list: list[os.path], set_type: str) -> None:
         """
-        :param img_dir: name of image directory
-        :param mask_dir: name of mask directory
         :param image_list: list of paths to images to be split
+        :param set_type: type of set being processed e.g. "train", "test", "valid"
         :return: None
         """
         out_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir, set_type)
