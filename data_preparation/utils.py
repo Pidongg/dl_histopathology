@@ -5,13 +5,13 @@ import numpy as np
 import torchvision.transforms.functional as F
 
 
-def list_files_of_a_type(directory: os.path, file_extension: str) -> int:
+def list_files_of_a_type(directory: os.path, file_extension: str) -> list[os.path]:
     """
     :param directory: Path to a directory
     :param file_extension: e.g. ".png", ".jpg"
     :return: The number of files with the supplied extension inside the directory.
     """
-    return glob.glob(directory + "/*" + file_extension)
+    return glob.glob(f"{directory}/*{file_extension}")
 
 
 def get_filename(file_path):
@@ -30,3 +30,7 @@ def show_images(images):
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
     plt.show()
+
+
+def collate_fn(batch):
+    return tuple(zip(*batch))

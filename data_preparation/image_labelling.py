@@ -41,19 +41,22 @@ def split_and_show_masks(image_path: os.path, mask_path: os.path) -> None:
     show_images(drawn_masks)
 
 
-def show_bboxes(image_path: os.path, bboxes: torch.Tensor) -> None:
+def show_bboxes(image_path: os.path, bboxes: torch.Tensor, labels=None) -> None:
     image = read_image(image_path)
 
-    drawn_boxes = draw_bounding_boxes(image, bboxes, colors="red")
+    drawn_boxes = draw_bounding_boxes(image, bboxes, colors="red", labels=labels)
     show_images(drawn_boxes)
 
 
-def bboxes_from_one_mask(mask_path: os.path, out_dir: os.path, yolo: bool = False) -> torch.Tensor:
+def bboxes_from_one_mask(mask_path: os.path, out_dir: os.path, yolo: bool = False) -> [torch.Tensor, torch.Tensor]:
     """
     :param mask_path: The path to the mask to be processed.
     :param out_dir: Path to the directory to which any label files should be output (only used if yolo=True)
     :param yolo: True if YOLO-format label txt files are to be output.
-    :return: a Tensor containing one bounding box (x_min, y_min, x_max, y_max) for each class present.
+    :return:
+        - A tensor containing one bounding box (x_min, y_min, x_max, y_max) for each class present
+        - A tensor containing the corresponding labels for each bounding box
+        - A tensor containing the masks for each bounding box
     """
     mask = read_image(mask_path)
     masks, obj_ids = get_masks_from_mask(mask_path)
@@ -81,7 +84,7 @@ def bboxes_from_one_mask(mask_path: os.path, out_dir: os.path, yolo: bool = Fals
                 line = f"{class_idx} {x_centre} {y_centre} {width} {height}\n"
                 f.write(line)
 
-    return bboxes
+    return bboxes, obj_ids, masks
 
 
 def bboxes_from_multiple_masks(mask_dir_path: os.path, out_dir, yolo=False):
@@ -96,7 +99,7 @@ def bboxes_from_multiple_masks(mask_dir_path: os.path, out_dir, yolo=False):
 
     for i in tqdm(range(len(mask_list))):
         mask_path = mask_list[i]
-        bboxes = bboxes_from_one_mask(mask_path=mask_path, out_dir=out_dir, yolo=yolo)
+        bboxes, labels, _ = bboxes_from_one_mask(mask_path=mask_path, out_dir=out_dir, yolo=yolo)
 
         # for testing purposes- visualisation code
         # image_name = get_filename(mask_path) + '.png'

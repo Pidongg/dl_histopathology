@@ -1,6 +1,7 @@
-path: 'C:\Users\kwanw\PycharmProjects\dl_histopathology\prepared_data' # dataset root dir
+path: 'C:\Users\kwanw\PycharmProjects\dl_histopathology\prepared_data\Amgad2019' # dataset root dir
 train: images/train # train images (relative to 'path')
-val: images/test  # val images (relative to 'path')
+val: images/valid  # val images (relative to 'path')
+test: images/test  # test images
 
 # Classes
 names:
