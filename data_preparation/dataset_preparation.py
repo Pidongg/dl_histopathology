@@ -18,6 +18,7 @@ import shutil
 import csv
 
 from data_preparation import utils, image_labelling
+from data_preparation.qupath_label_preparation import Label, LabelPreparer
 
 
 class DataPreparer:
@@ -26,9 +27,11 @@ class DataPreparer:
                  in_img_dir):
         super().__init__()
         # validate arguments
-        if not os.path.exists(in_root_dir) or \
-                not os.path.exists(os.path.join(in_root_dir, in_img_dir)):
-            raise Exception("Input dataset does not exist")
+        if not os.path.exists(in_root_dir):
+            raise Exception("Input directory does not exist")
+
+        if not os.path.exists(os.path.join(in_root_dir, in_img_dir)):
+            raise Exception("Input images directory does not exist")
 
         self.in_root_dir = in_root_dir  # directory of the unprocessed dataset
         self.in_img_dir = in_img_dir  # directory of images relative to in_root_dir
@@ -61,138 +64,7 @@ class DataPreparer:
         }
 
 
-class DeepLesion(DataPreparer):
-    def __init__(self, in_root_dir, in_img_dir,
-                 prepared_root_dir, prepared_img_dir, prepared_label_dir,
-                 label_file):
-        super().__init__(in_root_dir, in_img_dir)
-        self.prepared_root_dir = prepared_root_dir
-        self.prepared_img_dir = prepared_img_dir
-        self.prepared_label_dir = prepared_label_dir
-        self.label_file = label_file
-
-    def train_test_val_split(self, train: float, test: float, val: float):
-        img_lists = self.get_train_test_val_img_lists(train, test, val)
-
-        # create target directories
-        target_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir)
-        if not os.path.exists(target_img_dir):
-            os.makedirs(target_img_dir)
-
-        target_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
-        if not os.path.exists(target_label_dir):
-            os.makedirs(target_label_dir)
-
-        for set_type in img_lists:
-            os.mkdir(os.path.join(target_img_dir, set_type))
-            for i in tqdm.tqdm(range(len(img_lists[set_type]))):
-                img_path = img_lists[set_type][i]
-                img_name = os.path.basename(img_path)
-                shutil.move(img_path, os.path.join(target_img_dir, set_type, img_name))
-
-    def process_extracted_images(self, in_dir):
-        """
-        DELETE LATER
-        Delete slides which do not have a corresponding label in any of the train, test, or valid sets,
-        and move them to prepared_root_dir/prepared_img_dir with the full name.
-        """
-        for img_dir in os.listdir(in_dir):  # walk through the top-level directory
-            img_dir = os.path.join(in_dir, img_dir)  # convert to full path
-
-            if not os.path.isdir(img_dir):  # skip non-directories
-                continue
-
-            # get just the name of the subdirectory
-            dir_name = os.path.basename(img_dir)
-
-            img_paths = utils.list_files_of_a_type(img_dir, ".png")
-
-            for i in tqdm.tqdm(range(len(img_paths))):
-                img_path = img_paths[i]
-                img_name = dir_name + '_' + utils.get_filename(img_path)  # name that the label file will have
-
-                label_found = False
-
-                for set_type in ["train", "test", "valid"]:
-                    label_path = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type, img_name + ".txt")
-                    if os.path.exists(label_path):
-                        label_found = True
-                        break
-
-                if not label_found:
-                    os.remove(img_path)
-                else:
-                    target_img_path = os.path.join(self.prepared_root_dir, self.prepared_img_dir, img_name + ".png")
-                    shutil.move(img_path, target_img_path)
-
-            os.rmdir(img_dir)
-
-    def create_labels(self):
-        label_file = os.path.join(self.in_root_dir, self.label_file)
-
-        with open(label_file, "r") as f:
-            file_reader = csv.reader(f)
-            if not os.path.exists(os.path.join(self.prepared_root_dir, self.prepared_label_dir)):
-                os.makedirs(os.path.join(self.prepared_root_dir, self.prepared_label_dir))
-            next(file_reader, None)  # skip the headers
-
-            for row in file_reader:
-                # exclude -1 labels.
-                if row[9] == "-1":
-                    continue
-
-                img_name = row[0].split('.')[0]
-                target_label_path = os.path.join(self.prepared_root_dir, self.prepared_label_dir, img_name + ".txt")
-                lesion_type = int(row[9]) - 1  # subtract 1 so indices start from 0
-
-                image_size = int(row[13].split(',')[0])
-
-                bbox = row[6].split(',')
-                xmin = float(bbox[0].strip(' '))
-                ymin = float(bbox[1].strip(' '))
-                xmax = float(bbox[2].strip(' '))
-                ymax = float(bbox[3].strip(' '))
-                xc = (xmin + xmax) / (2 * image_size)
-                yc = (ymin + ymax) / (2 * image_size)
-                w = (xmax - xmin) / image_size
-                h = (ymax - ymin) / image_size
-
-                with open(target_label_path, "w") as label_writer:
-                    label_writer.write(f"{lesion_type} {xc} {yc} {w} {h}")
-
-        self.split_labels()
-
-    def split_labels(self):
-        for set_type in ["train", "test", "valid"]:
-            label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type)
-            if not os.path.exists(label_dir):
-                os.makedirs(label_dir)
-            img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir, set_type)
-            img_list = utils.list_files_of_a_type(img_dir, ".png")
-            for i in tqdm.tqdm(range(len(img_list))):
-                img_path = img_list[i]
-                img_name = utils.get_filename(img_path)
-                label_path = os.path.join(self.prepared_root_dir, self.prepared_label_dir, img_name + ".txt")
-                if os.path.exists(label_path):
-                    shutil.move(label_path, os.path.join(label_dir, img_name + ".txt"))
-
-    def show_bboxes_from_labels(self, set_type: str):
-        img_paths = utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
-                                                            self.prepared_img_dir,
-                                                            set_type),
-                                               ".png")
-        for img_path in img_paths:
-            filename = utils.get_filename(img_path)
-            print("viewing", filename)
-
-            label_path = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type, filename + ".txt")
-            bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
-            print(bboxes)
-            image_labelling.show_bboxes(img_path, bboxes, labels=labels)
-            _ = input("enter to continue")
-
-
-class Amgad2019_Preparer(DataPreparer):
+class Amgad2019Preparer(DataPreparer):
     def __init__(self,
                  in_root_dir, prepared_root_dir,
                  patch_w, patch_h,
@@ -202,7 +74,7 @@ class Amgad2019_Preparer(DataPreparer):
 
         # validate arguments
         if not os.path.exists(os.path.join(in_root_dir, in_mask_dir)):
-            raise Exception("Input dataset does not exist")
+            raise Exception("Input mask directory does not exist")
 
         if len(utils.list_files_of_a_type(os.path.join(in_root_dir, in_img_dir), ".png")) != \
                 len(utils.list_files_of_a_type(os.path.join(in_root_dir, in_mask_dir), ".png")):
@@ -319,3 +191,105 @@ class Amgad2019_Preparer(DataPreparer):
             bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
             image_labelling.show_bboxes(img_path, bboxes, labels=labels)
             _ = input("enter to continue")
+
+
+class TauPreparer(DataPreparer):
+    def __init__(self,
+                 in_root_dir, prepared_root_dir,
+                 in_img_dir, in_label_dir,
+                 prepared_img_dir, prepared_label_dir,
+                 patch_w=512, patch_h=512
+                 ):
+        super().__init__(in_root_dir, in_img_dir)
+
+        # validate arguments
+        if not os.path.exists(os.path.join(in_root_dir, in_label_dir)):
+            raise Exception("Input annotations directory does not exist")
+
+        self.prepared_root_dir = prepared_root_dir  # directory of the prepared dataset
+        self.in_label_dir = in_label_dir  # directory of annotations relative to in_root_dir
+        self.prepared_img_dir = prepared_img_dir  # directory of images relative to prepared_root_dir
+        self.prepared_label_dir = prepared_label_dir  # directory of annotations relative to prepared_root_dir
+
+    def train_test_val_split(self, train: float, test: float, valid: float, in_img_dir, in_label_dir):
+        """
+        Splits the entire dataset into train/test/val sets and moves the images + labels into the relevant directories.
+        """
+        for region in ['Cortical', 'BG', 'DN']:
+            region_dir = os.path.join(in_img_dir, region)
+            img_dirs = [f for f in os.listdir(region_dir) if os.path.isdir(os.path.join(region_dir, f))]
+
+            for slide_id in img_dirs:
+                region_preparer = DataPreparer(in_root_dir=self.in_root_dir,
+                                               in_img_dir=os.path.join("images", region, slide_id))
+
+                img_list_dict = region_preparer.get_train_test_val_img_lists(train, test, valid)
+
+                # create target directories
+                target_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir)
+                if not os.path.exists(target_img_dir):
+                    os.makedirs(target_img_dir)
+
+                target_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
+                if not os.path.exists(target_label_dir):
+                    os.makedirs(target_label_dir)
+
+                for set_type in img_list_dict:
+                    if not os.path.exists(os.path.join(target_img_dir, set_type)):
+                        os.mkdir(os.path.join(target_img_dir, set_type))
+                    if not os.path.exists(os.path.join(target_label_dir, set_type)):
+                        os.mkdir(os.path.join(target_label_dir, set_type))
+
+                    for i in tqdm.tqdm(range(len(img_list_dict[set_type]))):
+                        # get image path and move it to the target directory
+                        img_path = img_list_dict[set_type][i]
+                        img_name = utils.get_filename(img_path)
+                        shutil.move(img_path, os.path.join(target_img_dir, set_type, img_name + ".png"))
+
+                        # get label path and move it to the target directory
+                        label_path = os.path.join(in_label_dir, region, slide_id, img_name + ".txt")
+                        shutil.move(label_path, os.path.join(target_label_dir, set_type, img_name + ".txt"))
+
+    def prepare_labels_for_yolo(self):
+        """
+        Goes through all the label files in `self.in_label_dir` and removes unlabelled annotations,
+        divides all annotations per tile, and removes tiles with no annotations.
+        """
+        for region in ['DN']:
+            print(f"Processing region {region}")
+            root_label_dir = os.path.join(self.in_root_dir, self.in_label_dir, region)
+            root_img_dir = os.path.join(self.in_root_dir, self.in_img_dir, region)
+            out_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir, region)
+
+            label_preparer = LabelPreparer(root_label_dir=root_label_dir,
+                                           root_img_dir=root_img_dir,
+                                           out_dir=out_dir)
+            # print("\nCreating filtered detection lists")
+            # label_preparer.remove_unlabelled_objects()
+
+            print("\nSeparating labels by tile for each slide")
+            label_preparer.separate_labels_by_tile()
+
+            print("\nDeleting images/labels with empty label files")
+            label_preparer.delete_files_with_no_labels()
+
+    def show_bboxes(self, set_type: str):
+        """
+        Displays bboxes from a certain set, one image at a time.
+        :param set_type: Name of set to view masks and bboxes from (e.g. "train", "test", "valid").
+        :return:
+        """
+        img_paths = utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
+                                                            self.prepared_img_dir,
+                                                            set_type),
+                                               ".png")
+
+        for img_path in img_paths:
+            filename = utils.get_filename(img_path)
+            print("viewing", filename)
+
+            label_path = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type, filename + ".txt")
+            bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
+            image_labelling.show_bboxes(img_path, bboxes, labels=labels)
+            _ = input("enter to continue")
+

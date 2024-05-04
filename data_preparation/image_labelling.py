@@ -108,15 +108,20 @@ def bboxes_from_multiple_masks(mask_dir_path: os.path, out_dir, yolo=False):
         # show_bboxes(image_path, bboxes)
 
 
-def bboxes_from_yolo_labels(label_path: os.path) -> torch.Tensor:
+def bboxes_from_yolo_labels(label_path: os.path, normalised=False) -> tuple[torch.Tensor, torch.Tensor]:
     """
     :param label_path: Path to a YOLO-format label .txt file
     :return: A tensor containing bbox coordinates extracted from label_path, of shape (N, 4)
-        for N = no. of bboxes, and each row holding [x_min, y_min, x_max, y_max] unnormalised.
+        for N = no. of bboxes, and each row holding [x_min, y_min, x_max, y_max].
+        Returns results without normalisation by default.
     """
+    device = (torch.device(f'cuda:{torch.cuda.current_device()}')
+              if torch.cuda.is_available()
+              else 'cpu')
+
     with open(label_path, "r") as f:
         # create an empty tensor
-        bboxes = torch.FloatTensor()
+        bboxes = torch.FloatTensor().to(device)
 
         labels = []
 
@@ -127,15 +132,22 @@ def bboxes_from_yolo_labels(label_path: os.path) -> torch.Tensor:
             width = float(line[3])
             height = float(line[4])
 
-            x_min = (x_centre - (width / 2)) * 512
-            x_max = (x_centre + (width / 2)) * 512
-            y_min = (y_centre - (height / 2)) * 512
-            y_max = (y_centre + (height / 2)) * 512
+            if normalised:
+                x_min = (x_centre - (width / 2))
+                x_max = (x_centre + (width / 2))
+                y_min = (y_centre - (height / 2))
+                y_max = (y_centre + (height / 2))
+            else:
+                x_min = (x_centre - (width / 2)) * 512
+                x_max = (x_centre + (width / 2)) * 512
+                y_min = (y_centre - (height / 2)) * 512
+                y_max = (y_centre + (height / 2)) * 512
 
-            new_bbox = torch.Tensor([[x_min, y_min, x_max, y_max]])
+            new_bbox = torch.Tensor([[x_min, y_min, x_max, y_max]]).to(device)
 
             bboxes = torch.cat([bboxes, new_bbox], axis=0)
 
-            labels.append(line[0])
+            labels.append(int(line[0]))
 
-    return bboxes, labels
+
+    return bboxes, torch.Tensor(labels).to(device)

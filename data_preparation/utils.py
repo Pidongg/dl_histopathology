@@ -9,7 +9,7 @@ def list_files_of_a_type(directory: os.path, file_extension: str) -> list[os.pat
     """
     :param directory: Path to a directory
     :param file_extension: e.g. ".png", ".jpg"
-    :return: The number of files with the supplied extension inside the directory.
+    :return: A list of files with the given extension inside the directory.
     """
     return glob.glob(f"{directory}/*{file_extension}")
 
@@ -32,5 +32,4 @@ def show_images(images):
     plt.show()
 
 
-def collate_fn(batch):
-    return tuple(zip(*batch))
+

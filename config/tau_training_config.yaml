@@ -1,0 +1,32 @@
+data: "../config/tau_data.yaml"
+epochs: 1
+optimizer: 'AdamW'
+plots: True
+val: True
+patience: 10
+save_period: 10
+
+# hyperparameters saved from the best performance obtained throughout tuning for 100 iterations of 10 epochs each
+lr0: 0.00251
+lrf: 0.01025
+momentum: 0.89225
+weight_decay: 0.0003
+warmup_epochs: 4.77615
+warmup_momentum: 0.86454
+box: 7.08673
+cls: 0.41456
+dfl: 1.72313
+hsv_h: 0.01225
+hsv_s: 0.40973
+hsv_v: 0.24328
+degrees: 36.35184
+translate: 0.09625
+scale: 0.37703
+shear: 0.0
+perspective: 0.0
+flipud: 0.42503
+fliplr: 0.66767
+bgr: 0.0
+mosaic: 0.58041
+mixup: 0.0
+copy_paste: 0.0

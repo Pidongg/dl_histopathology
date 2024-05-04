@@ -11,11 +11,11 @@ from data_preparation import image_labelling
 from data_preparation import utils
 
 
-class Amgad2019Dataset(torch.utils.data.Dataset):
-    def __init__(self, img_dir, mask_dir, width, height, transforms=None):
+class RCNNDataset(torch.utils.data.Dataset):
+    def __init__(self, img_dir, label_dir, width, height, transforms=None):
         self.transforms = transforms
         self.img_dir = img_dir
-        self.mask_dir = mask_dir
+        self.label_dir = label_dir
         self.height = height
         self.width = width
 
@@ -26,23 +26,22 @@ class Amgad2019Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         # capture the image name and the full image path
-        image_name = self.all_images[idx]
-        image_path = os.path.join(self.img_dir, image_name)
+        image_name = os.path.splitext(self.all_images[idx])[0]
+        image_path = os.path.join(self.img_dir, image_name + '.png')
 
         # read the image
         image = cv2.imread(image_path)
 
         # convert BGR to RGB color format
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
-        image_resized = cv2.resize(image, (self.width, self.height))
-        image_resized /= 255.0  # scale colour channels to 0-1
+        image /= 255.0  # scale colour channels to 0-1
 
-        # get the image's mask, which has the same name
-        mask_path = os.path.join(self.mask_dir, image_name)
+        # get the image's label file, which has the same name
+        label_path = os.path.join(self.label_dir, image_name + ".txt")
 
-        # box coordinates, labels, and per-class masks are extracted from the mask
+        # box coordinates and labels are extracted from the corresponding yolo file
         # output_dir is empty since no labels will be written out
-        boxes, labels, masks = image_labelling.bboxes_from_one_mask(mask_path=mask_path, out_dir="", yolo=False)
+        boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
 
         # increment the labels since 0 is reserved for the background class.
         labels += 1
@@ -62,19 +61,23 @@ class Amgad2019Dataset(torch.utils.data.Dataset):
             "labels": labels,
             "area": area,
             "iscrowd": iscrowd,
-            "image_id": torch.tensor([idx]),
-            "masks": masks
+            "image_id": torch.tensor([idx])
         }
 
         # apply the image transforms
         if self.transforms:
-            sample = self.transforms(image=image_resized,
-                                     bboxes=target['boxes'],
-                                     labels=labels)
-            image_resized = sample['image']
-            target['boxes'] = torch.Tensor(sample['bboxes'])
+            try:
+                sample = self.transforms(image=image,
+                                         bboxes=target['boxes'].cpu(),  # since this gets converted to numpy
+                                         labels=labels.cpu())
+                image = sample['image']
+                target['boxes'] = torch.Tensor(sample['bboxes'])
+            except ValueError as e:
+                # continue without applying any transforms - limited precision sometimes causes problems
+                print(e)
+                print("Continuing without applying transforms")
 
-        return image_resized, target
+        return image, target
 
     def __len__(self):
         return len(self.all_images)
