@@ -1,24 +1,30 @@
-# written with reference to https://pytorch.org/vision/0.11/auto_examples/plot_repurposing_annotations.html
+# Utility functions to handle image masks, extract bounding boxes, and visualise masks/bboxes.
+# Written with reference to https://pytorch.org/vision/0.11/auto_examples/plot_repurposing_annotations.html.
 
 from tqdm import tqdm
 
 import torch
 from torchvision.io import read_image
 from torchvision.ops import masks_to_boxes
-from torchvision.utils import draw_segmentation_masks
-from torchvision.utils import draw_bounding_boxes
+from torchvision.utils import draw_segmentation_masks, draw_bounding_boxes
 
 from data_preparation.utils import *
 
 
 def get_masks_from_mask(mask_path: os.path):
     """
-    Takes a path to a mask image.
-    Returns a Tensor of masks for each class present, and corresponding class indices.
+    Extracts binary masks from a multiclass mask.
+
+    Args:
+        mask_path (path): A path to the mask to separate.
+
+    Returns:
+        masks (Tensor[nc, w, h]): Masks for each of nc classes present in the original mask.
+        obj_ids (Tensor[nc]): Class indices corresponding to each of the masks.
     """
     mask = read_image(mask_path)
 
-    # We get the unique indices, as these would be the object ids.
+    # We get the unique values in the mask, as these would be the object ids.
     obj_ids = torch.unique(mask)
 
     # split the color-encoded mask into a set of boolean masks.
@@ -28,7 +34,9 @@ def get_masks_from_mask(mask_path: os.path):
 
 
 def split_and_show_masks(image_path: os.path, mask_path: os.path) -> None:
-    """ Takes an image and a mask, splits the mask by class, and displays the image with each mask overlaid. """
+    """
+    Takes an image and a mask, splits the mask by class, and displays the image with each mask overlaid.
+    """
     image = read_image(image_path)
 
     masks, obj_ids = get_masks_from_mask(mask_path)
@@ -42,21 +50,33 @@ def split_and_show_masks(image_path: os.path, mask_path: os.path) -> None:
 
 
 def show_bboxes(image_path: os.path, bboxes: torch.Tensor, labels=None) -> None:
+    """
+    Displays an image with bounding boxes overlaid.
+
+    Takes:
+        image_path (path): Path to the image to display.
+        bboxes (Tensor[n, 4]): Coordinates of n bounding boxes.
+        labels (Tensor[n]): Labels of each bounding box.
+    """
     image = read_image(image_path)
 
     drawn_boxes = draw_bounding_boxes(image, bboxes, colors="red", labels=labels)
     show_images(drawn_boxes)
 
 
-def bboxes_from_one_mask(mask_path: os.path, out_dir: os.path, yolo: bool = False) -> [torch.Tensor, torch.Tensor]:
+def bboxes_from_one_mask(mask_path: os.path, out_dir: os.path, yolo: bool = False):
     """
-    :param mask_path: The path to the mask to be processed.
-    :param out_dir: Path to the directory to which any label files should be output (only used if yolo=True)
-    :param yolo: True if YOLO-format label txt files are to be output.
-    :return:
-        - A tensor containing one bounding box (x_min, y_min, x_max, y_max) for each class present
-        - A tensor containing the corresponding labels for each bounding box
-        - A tensor containing the masks for each bounding box
+    Takes a mask and converts it to bounding boxes.
+
+    Takes:
+        mask_path (path): Path to the mask to be processed.
+        out_dir (path): Directory to which any label files should be output (only used if yolo=True)
+        yolo (bool): True if YOLO-format label txt files are to be output.
+
+    Returns:
+        bboxes (Tensor[n, 4]): One bounding box (x_min, y_min, x_max, y_max) for each class present in the mask
+        obj_ids (Tensor[n]): Class index label for each bounding box
+        masks (Tensor[n, w, h]): Binary masks corresponding to each bounding box
     """
     mask = read_image(mask_path)
     masks, obj_ids = get_masks_from_mask(mask_path)
@@ -89,12 +109,13 @@ def bboxes_from_one_mask(mask_path: os.path, out_dir: os.path, yolo: bool = Fals
 
 def bboxes_from_multiple_masks(mask_dir_path: os.path, out_dir, yolo=False):
     """
-    :param mask_dir_path: Full path to the directory holding the masks.
-    :param out_dir: Path to the directory to which any label files should be output (only used if yolo=True)
-    :param yolo: True if YOLO-format label txt files are to be output.
-    :return:
+    Takes a directory of masks and converts them all to bounding boxes.
+
+    Takes:
+        mask_dir_path (path): Directory of masks to be processed.
+        out_dir (path): Directory to which any label files should be output (only used if yolo=True)
+        yolo (bool): True if YOLO-format label txt files are to be output.
     """
-    # list the masks in the given directory
     mask_list = glob.glob(mask_dir_path + "/*.png")
 
     for i in tqdm(range(len(mask_list))):
@@ -108,12 +129,18 @@ def bboxes_from_multiple_masks(mask_dir_path: os.path, out_dir, yolo=False):
         # show_bboxes(image_path, bboxes)
 
 
-def bboxes_from_yolo_labels(label_path: os.path, normalised=False) -> tuple[torch.Tensor, torch.Tensor]:
+def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False):
     """
-    :param label_path: Path to a YOLO-format label .txt file
-    :return: A tensor containing bbox coordinates extracted from label_path, of shape (N, 4)
-        for N = no. of bboxes, and each row holding [x_min, y_min, x_max, y_max].
-        Returns results without normalisation by default.
+    Reads boxes from a txt file holding YOLO-format labels and outputs them in a tensor of
+        (x_min, y_min, x_max, y_max) boxes along with class indices.
+
+    Args:
+        label_path: Path to a YOLO-format label .txt file
+
+    Returns:
+        bboxes (Tensor[N, 4]): bbox coordinates extracted from label_path, in (x_min, y_min, x_max, y_max) format.
+            Coordinates are unnormalised by default.
+        labels (Tensor[n]): Class index label for each bounding box
     """
     device = (torch.device(f'cuda:{torch.cuda.current_device()}')
               if torch.cuda.is_available()
@@ -149,5 +176,6 @@ def bboxes_from_yolo_labels(label_path: os.path, normalised=False) -> tuple[torc
 
             labels.append(int(line[0]))
 
+    labels = torch.Tensor(labels).to(device)
 
-    return bboxes, torch.Tensor(labels).to(device)
+    return bboxes, labels

@@ -1,5 +1,5 @@
 data: "../config/tau_data.yaml"
-epochs: 1
+epochs: 50
 optimizer: 'AdamW'
 plots: True
 val: True

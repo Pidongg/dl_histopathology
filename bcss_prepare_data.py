@@ -1,15 +1,15 @@
-from data_preparation.dataset_preparation import Amgad2019Preparer
+from data_preparation.dataset_preparation import BCSSPreparer
 
 
 if __name__ == "__main__":
-    data_preparer = Amgad2019Preparer(in_root_dir='./datasets/Amgad2019',
-                                      prepared_root_dir="./prepared_data/Amgad2019",
-                                      patch_w=512,
-                                      patch_h=512,
-                                      in_img_dir="images",
-                                      in_mask_dir="masks",
-                                      prepared_img_dir="images",
-                                      prepared_mask_dir="masks")
+    data_preparer = BCSSPreparer(in_root_dir='./datasets/Amgad2019',
+                                 prepared_root_dir="./prepared_data/Amgad2019",
+                                 patch_w=512,
+                                 patch_h=512,
+                                 in_img_dir="images",
+                                 in_mask_dir="masks",
+                                 prepared_img_dir="images",
+                                 prepared_mask_dir="masks")
 
     img_lists = data_preparer.train_test_val_split(0.8, 0.1, 0.1)
 

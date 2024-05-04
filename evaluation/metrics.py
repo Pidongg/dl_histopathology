@@ -121,6 +121,7 @@ def plot_pr_curve(px, py, ap, iou, save_dir="pr_curve.png", names=(), on_plot=No
     if on_plot:
         on_plot(save_dir)
 
+
 class ObjectDetectionMetrics:
     """
     This class is for computing detection metrics such as mean average precision (mAP) of an object detection model.
