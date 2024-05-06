@@ -1,26 +1,26 @@
 # Classes to load data for training with PyTorch's Faster RCNN implementation.
 # Written with reference to this tutorial: https://debuggercafe.com/custom-object-detection-using-pytorch-faster-rcnn/
 
-import glob
 import torch
 import os
 import cv2
 import numpy as np
 
 from data_preparation import image_labelling
-from data_preparation import utils
+from data_preparation import data_utils
 
 
 class RCNNDataset(torch.utils.data.Dataset):
-    def __init__(self, img_dir, label_dir, width, height, transforms=None):
+    def __init__(self, img_dir, label_dir, width, height, device, transforms=None):
         self.transforms = transforms
         self.img_dir = img_dir
         self.label_dir = label_dir
         self.height = height
         self.width = width
+        self.device = device
 
         # get all the image paths in sorted order
-        self.image_paths = utils.list_files_of_a_type(img_dir, ".png")
+        self.image_paths = data_utils.list_files_of_a_type(img_dir, ".png")
         self.all_images = [os.path.basename(image_path) for image_path in self.image_paths]
         self.all_images = sorted(self.all_images)
 
@@ -42,6 +42,7 @@ class RCNNDataset(torch.utils.data.Dataset):
         # box coordinates and labels are extracted from the corresponding yolo file
         # output_dir is empty since no labels will be written out
         boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
+        labels = torch.Tensor(labels).to(self.device)
 
         # increment the labels since 0 is reserved for the background class.
         labels += 1

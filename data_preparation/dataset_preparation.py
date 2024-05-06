@@ -11,9 +11,10 @@ import os
 import glob
 import torch
 import shutil
+from collections import defaultdict
 
-from data_preparation import utils, image_labelling
-from data_preparation.qupath_label_preparation import Label, LabelPreparer
+import data_utils, image_labelling
+from qupath_label_preparation import LabelPreparer
 
 
 class DataPreparer:
@@ -58,7 +59,7 @@ class DataPreparer:
         # validate arguments
         assert (train + test + val) == 1
 
-        image_list = utils.list_files_of_a_type(os.path.join(self.in_root_dir, self.in_img_dir), ".png")
+        image_list = data_utils.list_files_of_a_type(os.path.join(self.in_root_dir, self.in_img_dir), ".png")
         image_list.sort()  # ensure consistent ordering
         n = len(image_list)
         train_n = math.ceil(n * 0.8)
@@ -108,8 +109,8 @@ class BCSSPreparer(DataPreparer):
         if not os.path.exists(os.path.join(in_root_dir, in_mask_dir)):
             raise Exception("Input mask directory does not exist")
 
-        if len(utils.list_files_of_a_type(os.path.join(in_root_dir, in_img_dir), ".png")) != \
-                len(utils.list_files_of_a_type(os.path.join(in_root_dir, in_mask_dir), ".png")):
+        if len(data_utils.list_files_of_a_type(os.path.join(in_root_dir, in_img_dir), ".png")) != \
+                len(data_utils.list_files_of_a_type(os.path.join(in_root_dir, in_mask_dir), ".png")):
             raise Exception("Number of images does not match number of masks")
 
         self.prepared_root_dir = prepared_root_dir
@@ -146,7 +147,7 @@ class BCSSPreparer(DataPreparer):
             img_path = image_list[i]
 
             # get image name and read image
-            image_name = utils.get_filename(img_path)
+            image_name = data_utils.get_filename(img_path)
             image = io.imread(img_path)
 
             # based on image name, get path to matching mask and read mask
@@ -210,7 +211,7 @@ class BCSSPreparer(DataPreparer):
         mask_dir_path = os.path.join(self.prepared_root_dir, self.prepared_mask_dir, set_type)
 
         # check that there exist masks to extract labels from
-        if len(utils.list_files_of_a_type(mask_dir_path, ".png")) == 0:
+        if len(data_utils.list_files_of_a_type(mask_dir_path, ".png")) == 0:
             raise Exception(f"The prepared mask directory {self.prepared_root_dir}/{self.prepared_mask_dir}/{set_type}"
                             f"currently contains no masks.")
 
@@ -226,13 +227,13 @@ class BCSSPreparer(DataPreparer):
         Args:
             set_type (str): Name of set to view masks and bboxes from (e.g. "train", "test", "valid").
         """
-        img_paths = utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
+        img_paths = data_utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
                                                             self.prepared_img_dir,
                                                             set_type),
                                                ".png")
 
         for img_path in img_paths:
-            filename = utils.get_filename(img_path)
+            filename = data_utils.get_filename(img_path)
             print("viewing", filename)
             mask_path = os.path.join(self.prepared_root_dir, self.prepared_mask_dir, set_type, filename + ".png")
             image_labelling.split_and_show_masks(img_path, mask_path)
@@ -258,11 +259,14 @@ class TauPreparer(DataPreparer):
     Attributes:
         in_root_dir (Path), in_img_dir (str), in_label_dir (str), prepared_root_dir (Path), prepared_img_dir (str),
         prepared_label_dir (str)
+        class_to_idx (dict[str, int]): A map of class names to indices. Hard coded to match the tau dataset.
 
     Methods:
-        train_test_val_split
-        prepare_labels_for_yolo
-        show_bboxes
+        prepare_labels_for_yolo: Prepares labels from text files holding all the labels in each slide,
+            by filtering out unlabelled annotations, dividing them by tile, and removing tiles with no annotations.
+        train_test_val_split: Splits the dataset train/test/val sets.
+        show_bboxes: Visualises the boxes on images in one of the train/test/val sets.
+        count_objects: Count the number of images per set along with number of objects per class.
     """
     def __init__(self, in_root_dir, in_img_dir, in_label_dir, prepared_root_dir, prepared_img_dir, prepared_label_dir):
         super().__init__(in_root_dir, in_img_dir)
@@ -275,6 +279,14 @@ class TauPreparer(DataPreparer):
         self.prepared_root_dir = prepared_root_dir
         self.prepared_img_dir = prepared_img_dir
         self.prepared_label_dir = prepared_label_dir
+
+        self.class_to_idx = {
+            'TA': 0,
+            'CB': 1,
+            'NFT': 2,
+            'tau_fragments': 3,
+            # 'non_tau': 4
+        }
 
     def prepare_labels_for_yolo(self):
         """
@@ -292,15 +304,16 @@ class TauPreparer(DataPreparer):
 
             label_preparer = LabelPreparer(root_label_dir=root_label_dir,
                                            root_img_dir=root_img_dir,
-                                           out_dir=out_dir)
+                                           out_dir=out_dir,
+                                           class_to_idx=self.class_to_idx)
 
-            print("\nCreating filtered detection lists")
+            print("\nCreating filtered detection lists...")
             label_preparer.remove_unlabelled_objects()
 
-            print("\nSeparating labels by tile for each slide")
+            print("\nSeparating labels by tile for each slide...")
             label_preparer.separate_labels_by_tile()
 
-            print("\nDeleting images/labels with empty label files")
+            print("\nDeleting images/labels with empty label files...")
             label_preparer.delete_files_with_no_labels()
 
     def train_test_val_split(self, train: float, test: float, valid: float):
@@ -315,18 +328,23 @@ class TauPreparer(DataPreparer):
         Returns:
             img_lists (dict[list[path]]): A dictionary of image path lists with keys [train, test, val].
         """
-        in_img_dir = os.path.join(self.in_root_dir, self.in_img_dir)
-        in_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
-
         for region in ['Cortical', 'BG', 'DN']:
-            region_dir = os.path.join(in_img_dir, region)
-            slide_ids = [f for f in os.listdir(region_dir) if os.path.isdir(os.path.join(region_dir, f))]
+            img_region_dir = os.path.join(self.in_root_dir, self.in_img_dir, region)
+            slide_ids = [f for f in os.listdir(img_region_dir) if os.path.isdir(os.path.join(img_region_dir, f))]
 
-            for slide_id in slide_ids:
+            print(f"Moving images from {region} region into test/train/val directories...")
+            for i in tqdm.tqdm(range(len(slide_ids))):
+                slide_id = slide_ids[i]
+
+                in_img_dir = os.path.join(img_region_dir, slide_id)
+                in_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir, region, slide_id)
+
                 # check that the numbers of input images and labels for this slide match
-                if len(utils.list_files_of_a_type(region_dir, '.png')) != \
-                       len(utils.list_files_of_a_type(os.path.join(in_label_dir, region), '.txt')):
-                    raise Exception(f"Mismatch in number of images and labels for slide {slide_id} of region {region}")
+                num_images = len(data_utils.list_files_of_a_type(in_img_dir, '.png'))
+                num_labels = len(data_utils.list_files_of_a_type(in_label_dir, '.txt'))
+                if num_images != num_labels:
+                    raise Exception(f"Mismatch in number of images and labels for slide {slide_id} of region {region}:"
+                                    f"{num_images} images and {num_labels} labels")
 
                 region_preparer = DataPreparer(in_root_dir=self.in_root_dir,
                                                in_img_dir=os.path.join("images", region, slide_id))
@@ -349,15 +367,18 @@ class TauPreparer(DataPreparer):
                     if not os.path.exists(os.path.join(target_label_dir, set_type)):
                         os.mkdir(os.path.join(target_label_dir, set_type))
 
-                    for i in tqdm.tqdm(range(len(img_list_dict[set_type]))):
+                    for img_path in img_list_dict[set_type]:
                         # get image path and move it to the target directory
-                        img_path = img_list_dict[set_type][i]
-                        img_name = utils.get_filename(img_path)
+                        img_name = data_utils.get_filename(img_path)
                         shutil.move(img_path, os.path.join(target_img_dir, set_type, img_name + ".png"))
 
                         # get label path and move it to the target directory
-                        label_path = os.path.join(in_label_dir, region, slide_id, img_name + ".txt")
+                        label_path = os.path.join(in_label_dir, img_name + ".txt")
                         shutil.move(label_path, os.path.join(target_label_dir, set_type, img_name + ".txt"))
+
+                # delete empty slide directory
+                os.rmdir(in_img_dir)
+                os.rmdir(in_label_dir)
 
     def show_bboxes(self, set_type: str):
         """
@@ -366,17 +387,56 @@ class TauPreparer(DataPreparer):
         Args:
             set_type (str): Name of set to view masks and bboxes from (e.g. "train", "test", "valid").
         """
-        img_paths = utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
+        img_paths = data_utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
                                                             self.prepared_img_dir,
                                                             set_type),
                                                ".png")
 
+        class_to_colour = {
+            0: "green",
+            1: "#19ffe8",  # cyan
+            2: "#a225f5",  # purple
+            3: "red"
+        }
+
         for img_path in img_paths:
-            filename = utils.get_filename(img_path)
+            filename = data_utils.get_filename(img_path)
             print("viewing", filename)
 
             label_path = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type, filename + ".txt")
             bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
-            image_labelling.show_bboxes(img_path, bboxes, labels=labels)
+            colours = [class_to_colour[ci] for ci in labels]
+            image_labelling.show_bboxes(img_path, bboxes, labels=labels, colours=colours)
             _ = input("enter to continue")
+
+    def count_objects(self):
+        """
+        Print the number of images in each directory in the prepared image directory,
+            along with the number of objects per image.
+        """
+        root_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir)
+        root_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
+
+        sets = [f for f in os.listdir(root_img_dir) if os.path.isdir(os.path.join(root_img_dir, f))]
+
+        for set_name in sets:
+            num_objects_per_class = defaultdict(int)
+
+            img_dir = os.path.join(root_img_dir, set_name)
+            label_dir = os.path.join(root_label_dir, set_name)
+
+            img_paths = data_utils.list_files_of_a_type(img_dir, ".png")
+
+            for img_path in img_paths:
+                img_name = data_utils.get_filename(img_path)
+                label_path = os.path.join(label_dir, img_name + ".txt")
+
+                bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
+
+                for l in labels:
+                    num_objects_per_class[l] += 1
+
+            print(f"Objects per class in set {set_name} : {num_objects_per_class}")
+            print(f"Number of images in set {set_name}: {len(img_paths)}")
+            num_objects_per_class.clear()
 

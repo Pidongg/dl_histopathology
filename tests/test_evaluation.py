@@ -1,6 +1,6 @@
 import unittest
 from ultralytics import YOLO
-from evaluation.evaluate import *
+from evaluation.evaluator import *
 from evaluation.old_metrics import *
 import torch
 from torch import Tensor

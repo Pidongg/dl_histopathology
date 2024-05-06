@@ -8,7 +8,7 @@ from torchvision.io import read_image
 from torchvision.ops import masks_to_boxes
 from torchvision.utils import draw_segmentation_masks, draw_bounding_boxes
 
-from data_preparation.utils import *
+from .data_utils import *
 
 
 def get_masks_from_mask(mask_path: os.path):
@@ -49,18 +49,24 @@ def split_and_show_masks(image_path: os.path, mask_path: os.path) -> None:
     show_images(drawn_masks)
 
 
-def show_bboxes(image_path: os.path, bboxes: torch.Tensor, labels=None) -> None:
+def show_bboxes(image_path: os.path, bboxes: torch.Tensor, labels=None, colours="red") -> None:
     """
     Displays an image with bounding boxes overlaid.
 
     Takes:
         image_path (path): Path to the image to display.
         bboxes (Tensor[n, 4]): Coordinates of n bounding boxes.
-        labels (Tensor[n]): Labels of each bounding box.
+        labels (list[int]): Labels of each bounding box.
+        colors (list[str]): Color of each bounding box based on class.
     """
     image = read_image(image_path)
 
-    drawn_boxes = draw_bounding_boxes(image, bboxes, colors="red", labels=labels)
+    if labels:
+        labels = [str(l) for l in labels]  # convert to list[str] to work with show_bboxes
+
+    drawn_boxes = draw_bounding_boxes(image, bboxes, colors=colours, labels=labels, width=2,
+                                      font=r"C:\Windows\Fonts\Arial.ttf", font_size=30)
+
     show_images(drawn_boxes)
 
 
@@ -140,7 +146,7 @@ def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False):
     Returns:
         bboxes (Tensor[N, 4]): bbox coordinates extracted from label_path, in (x_min, y_min, x_max, y_max) format.
             Coordinates are unnormalised by default.
-        labels (Tensor[n]): Class index label for each bounding box
+        labels (list[int]): Class index label for each bounding box
     """
     device = (torch.device(f'cuda:{torch.cuda.current_device()}')
               if torch.cuda.is_available()
@@ -175,7 +181,5 @@ def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False):
             bboxes = torch.cat([bboxes, new_bbox], axis=0)
 
             labels.append(int(line[0]))
-
-    labels = torch.Tensor(labels).to(device)
 
     return bboxes, labels

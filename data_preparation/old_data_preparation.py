@@ -16,7 +16,7 @@ from torchvision.ops import masks_to_boxes
 from torchvision.utils import draw_segmentation_masks
 from torchvision.utils import draw_bounding_boxes
 
-from utils import *
+from data_utils import *
 
 
 def get_masks_from_mask(mask_path: os.path):

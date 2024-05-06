@@ -1,4 +1,4 @@
-// Get the current image (supports 'Run for project')
+// Get the current image
 def imageData = getCurrentImageData()
 
 // Define output path

@@ -64,6 +64,34 @@ def box_iou(boxes1: Tensor, boxes2: Tensor) -> Tensor:
     return iou
 
 
+def compute_ap(recall, precision):
+    """
+    Compute the average precision (AP) given the recall and precision curves.
+    Based on https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
+
+    Args:
+        recall (list): The recall curve as a list of recall values for confidence.
+        precision (list): The precision curve.
+
+    Returns:
+        (float): Average precision.
+        (np.ndarray): Precision envelope curve.
+        (np.ndarray): Modified recall curve with sentinel values added at the beginning and end.
+    """
+    # Append values to beginning and end
+    mrec = np.concatenate(([0.0], recall, [1.0]))  # remember that recall is stored in order of desc confidence
+    mpre = np.concatenate(([1.0], precision, [0.0]))
+
+    # Compute Pr_interp, i.e. precision at each conf level that gives a monotonic curve.
+    mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
+
+    # Calculate area under curve
+    i = np.where(mrec[1:] != mrec[:-1])[0]  # points where x-axis (recall) changes
+    ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])  # area under curve
+
+    return ap, mpre, mrec
+
+
 def smooth(y, f=0.05):
     """
     Box filter of fraction f.
@@ -79,15 +107,17 @@ def smooth(y, f=0.05):
 def plot_curve(px, py, save_dir, names: dict[int, str], xlabel, ylabel):
     """
     Plots a curve.
-    Implementation from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
+    Based on https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
     """
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
 
-    for i, y in enumerate(py):
-        ax.plot(px, y, linewidth=1, label=f"{names[i]}")  # plot(confidence, metric)
+    avg_y = smooth(py.mean(0), 0.05)  # smoothed curve averaging each class' curve
+    max_i = avg_y.argmax()  # index that maximises avg_y
 
-    y = smooth(py.mean(0), 0.05)
-    ax.plot(px, y, linewidth=3, label=f"all classes {y.max():.2f} at {px[y.argmax()]:.3f}")
+    for i, y in enumerate(py):
+        ax.plot(px, y, linewidth=1, label=f"{names[i]} ({y[max_i]:.2f} at {px[max_i]:.3f})")
+
+    ax.plot(px, avg_y, linewidth=3, label=f"all classes (max {avg_y.max():.2f} at {px[max_i]:.3f})")
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_xlim(0, 1)
@@ -98,7 +128,7 @@ def plot_curve(px, py, save_dir, names: dict[int, str], xlabel, ylabel):
     plt.close(fig)
 
 
-def plot_pr_curve(px, py, ap, iou, save_dir="pr_curve.png", names=(), on_plot=None):
+def plot_pr_curve(px, py, ap, iou, save_dir="pr_curve.png", names=()):
     """Plots a precision-recall curve."""
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
@@ -118,8 +148,6 @@ def plot_pr_curve(px, py, ap, iou, save_dir="pr_curve.png", names=(), on_plot=No
     ax.set_title("Precision-Recall Curve")
     fig.savefig(save_dir, dpi=250)
     plt.close(fig)
-    if on_plot:
-        on_plot(save_dir)
 
 
 class ObjectDetectionMetrics:
@@ -130,7 +158,6 @@ class ObjectDetectionMetrics:
     Args:
         save_dir (Path): A path to the directory where the output plots will be saved. Defaults to current directory.
         idx_to_name (Dict[int, str]): A dictionary that maps class indexes to names.
-        num_classes (int): Number of classes.
         detections (List[Tensor]): A list of detections per image, each in (x1, y1, x2, y2, conf, class) format.
         ground_truths (List[Tensor]): A list of ground truth labels per image, each in (x1, y1, x2, y2, class) format.
 
@@ -145,18 +172,16 @@ class ObjectDetectionMetrics:
         maps: Returns a dictionary of mean average precision (mAP) values for different IoU thresholds.
         results_dict: Returns a dictionary that maps detection metric keys to their computed values.
     """
-    def __init__(self, save_dir, idx_to_name, num_classes: int, detections: list[Tensor], ground_truths: list[Tensor],
+    def __init__(self, save_dir, idx_to_name, detections: list[Tensor], ground_truths: list[Tensor],
                  device):
         self.save_dir = save_dir
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         self.idx_to_name = idx_to_name
-        self.num_classes = num_classes
+        self.num_classes = len(idx_to_name.keys())
         self.device = device
-        # self.iou_threshold = torch.Tensor([0.5])
         self.iou_threshold = torch.linspace(0.5, 0.95, 10)
-
         self.detections = detections
         self.ground_truths = ground_truths
 
@@ -167,17 +192,14 @@ class ObjectDetectionMetrics:
         self.gt_per_pred_all = None
         self.pred_per_gt_all = None
 
-        self.match_predictions(self.iou_threshold)
+        self.match_predictions()
 
         # shape: (num_iou_thresholds, num_classes)
         self.ap = None
 
-    def match_predictions(self, iou_threshold: Tensor):
+    def match_predictions(self):
         """
         Matches `self.detections` to `self.ground_truths` for each image and for each iou_threshold specified.
-
-        Args:
-            iou_threshold: Tensor[t] of IOU thresholds to accept a detection.
 
         Returns:
             detection_true (Tensor[t, n]): Binary values indicating whether each detection is correct (1) or false (0),
@@ -188,7 +210,7 @@ class ObjectDetectionMetrics:
             gt_per_pred (Tensor[n]): Holds the value of the gt matching each pred, and -1 for no matches.
             pred_per_gt (Tensor[n]): Holds the value of the pred matching each gt, and -1 for no matches.
         """
-        t = iou_threshold.shape[0]
+        t = self.iou_threshold.shape[0]
         pred_true_all = []
         conf_all = []
         pred_cls_all = []
@@ -236,7 +258,7 @@ class ObjectDetectionMetrics:
             # gt_per_pred: tensor[t, num_pred]
             gt_per_pred = np.zeros((t, n)) - 1
 
-            for i, threshold in enumerate(iou_threshold.cpu().tolist()):
+            for i, threshold in enumerate(self.iou_threshold.cpu().tolist()):
                 matches = np.nonzero(iou >= threshold)  # IoU > threshold and classes match
                 matches = np.array(matches).T
 
@@ -268,12 +290,25 @@ class ObjectDetectionMetrics:
         self.pred_cls = torch.cat(pred_cls_all, axis=-1)
         self.gt_cls = torch.cat(gt_cls_all, axis=-1)
 
-    def get_confusion_matrix(self, conf_threshold):
+    def get_confusion_matrix(self, conf_threshold, all_iou=False, plot=False):
         """
         Returns a confusion matrix with predicted class as row index, and gt class as col index.
+
+        Args:
+            conf_threshold
+            all_iou (bool): Indicates whether to compute confusion matrices for all iou thresholds. If false,
+                just compute for IOU=0.5.
         """
-        matrix = torch.zeros((self.iou_threshold.shape[0], self.num_classes + 1, self.num_classes + 1), dtype=torch.int32)
-        for ti in range(self.iou_threshold.shape[0]):
+        t = self.iou_threshold.shape[0]
+
+        if all_iou:
+            iou_thresholds = range(t)
+        else:
+            iou_thresholds = [0]
+
+        matrix = torch.zeros((len(iou_thresholds), self.num_classes + 1, self.num_classes + 1), dtype=torch.int32)
+
+        for ti in iou_thresholds:
             gt_per_pred_all = self.gt_per_pred_all[ti]
             pred_per_gt_all = self.pred_per_gt_all[ti]
 
@@ -319,41 +354,14 @@ class ObjectDetectionMetrics:
 
         return matrix
 
-    def compute_ap(self, recall, precision):
-        """
-        Compute the average precision (AP) given the recall and precision curves.
-        Based on https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
-
-        Args:
-            recall (list): The recall curve as a list of recall values for confidence.
-            precision (list): The precision curve.
-
-        Returns:
-            (float): Average precision.
-            (np.ndarray): Precision envelope curve.
-            (np.ndarray): Modified recall curve with sentinel values added at the beginning and end.
-        """
-        # Append values to beginning and end
-        mrec = np.concatenate(([0.0], recall, [1.0]))  # remember that recall is stored in order of desc confidence
-        mpre = np.concatenate(([1.0], precision, [0.0]))
-
-        # Compute Pr_interp, i.e. precision at each conf level that gives a monotonic curve.
-        mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
-
-        # Calculate area under curve
-        i = np.where(mrec[1:] != mrec[:-1])[0]  # points where x-axis (recall) changes
-        ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])  # area under curve
-
-        return ap, mpre, mrec
-
-    def ap_per_class(self, plot=False):
+    def ap_per_class(self, plot=False, plot_all=False, prefix=""):
         """
         Calculates AP per class for each IOU threshold given.
         Based on https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py.
 
         Args:
-            iou_threshold (Tensor[t]): Tensor[t] of IOU thresholds to accept a detection.
             plot (bool): Flag indicating whether to save plots or not.
+            plot_all (bool): Indicates whether to save plots for all IOU thresholds.
 
         Returns:
             ap (Tensor[t, num_classes]): AP for each class for each IOU threshold given.
@@ -380,7 +388,6 @@ class ObjectDetectionMetrics:
         x = np.linspace(0, 1, 1000)
 
         # Average precision, precision and recall curves
-        # ap: (t, nc)
         ap = np.zeros((t, nc))
 
         # p_curve, r_curve: (t, nc, 1000)
@@ -417,7 +424,7 @@ class ObjectDetectionMetrics:
 
             # Precision-recall curve
             for ti in range(t):  # for each iou threshold
-                ap[ti, ci], mpre, mrec = self.compute_ap(recall[ti], precision[ti])
+                ap[ti, ci], mpre, mrec = compute_ap(recall[ti], precision[ti])
                 prec_values[ti].append(np.interp(x, mrec, mpre))  # precision against recall at the given IOU threshold
 
         # convert precision-recall curves at each IOU threshold to np arrays
@@ -431,18 +438,26 @@ class ObjectDetectionMetrics:
         self.ap = torch.as_tensor(ap, dtype=torch.float64, device=self.device)
 
         if plot:
-            for ti in range(t):
+            if plot_all:
+                iou_thresholds = range(t)
+            else:
+                # only output graphs for iou threshold = 0.5
+                iou_thresholds = [0]
+
+            for ti in iou_thresholds:
                 iou = np.round(self.iou_threshold[ti].item(), decimals=2)
 
-                plot_curve(x, p_curve[ti], os.path.join(self.save_dir, f"P_curve_IOU={iou}.png"),
+                plot_curve(x, p_curve[ti], os.path.join(self.save_dir, f"{prefix}_P_curve_IOU={iou}.png"),
                            self.idx_to_name, xlabel="Confidence", ylabel="Precision")
-                plot_curve(x, r_curve[ti], os.path.join(self.save_dir, f"R_curve_IOU={iou}.png"),
+                plot_curve(x, r_curve[ti], os.path.join(self.save_dir, f"{prefix}_R_curve_IOU={iou}.png"),
                            self.idx_to_name, xlabel="Confidence", ylabel="Recall")
-                plot_curve(x, f1_curve[ti], os.path.join(self.save_dir, f"F1_curve_IOU={iou}.png"),
+                plot_curve(x, f1_curve[ti], os.path.join(self.save_dir, f"{prefix}_F1_curve_IOU={iou}.png"),
                            self.idx_to_name, xlabel="Confidence", ylabel="F1")
                 plot_pr_curve(x, prec_values[ti], ap[ti], self.iou_threshold[ti],
-                              os.path.join(self.save_dir, f"PR_curve_IOU={iou}.png"),
+                              os.path.join(self.save_dir, f"{prefix}_PR_curve_IOU={iou}.png"),
                               self.idx_to_name)
+
+        return ap
 
     def get_map50(self):
         if self.ap is None:
