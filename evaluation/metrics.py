@@ -104,40 +104,50 @@ def smooth(y, f=0.05):
     return np.convolve(yp, np.ones(nf) / nf, mode="valid")  # y-smoothed
 
 
-def plot_curve(px, py, save_dir, names: dict[int, str], xlabel, ylabel):
+def plot_curve(px, py, save_dir, names: dict[int, str], xlabel, ylabel, show_max=False):
     """
     Plots a curve.
-    Based on https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
+
+    Takes:
+        show_max (bool): If true, show the x-value that maximises y.
     """
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
 
     avg_y = smooth(py.mean(0), 0.05)  # smoothed curve averaging each class' curve
     max_i = avg_y.argmax()  # index that maximises avg_y
 
-    for i, y in enumerate(py):
-        ax.plot(px, y, linewidth=1, label=f"{names[i]} ({y[max_i]:.2f} at {px[max_i]:.3f})")
+    class_idxs = sorted(list(names.keys()))
 
-    ax.plot(px, avg_y, linewidth=3, label=f"all classes (max {avg_y.max():.2f} at {px[max_i]:.3f})")
+    for i, y in enumerate(py):
+        if i in class_idxs:
+            curve_label = f"{names[i]}" + (f"({y[max_i]:.2f} at {px[max_i]:.3f})" if show_max else "")
+            ax.plot(px, y, linewidth=1, label=curve_label)
+            # ax.plot(px, y, linewidth=1, label=f"{names[i]}")
+
+    avg_curve_label = f"all classes" + (f"(max {avg_y.max():.2f} at {px[max_i]:.3f})" if show_max else "")
+    ax.plot(px, avg_y, linewidth=3, label=avg_curve_label)
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
-    ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
+    ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
     ax.set_title(f"{ylabel}-{xlabel} Curve")
     fig.savefig(save_dir, dpi=250)
     plt.close(fig)
 
 
 def plot_pr_curve(px, py, ap, iou, save_dir="pr_curve.png", names=()):
-    """Plots a precision-recall curve."""
+    """
+    Plots a precision-recall curve.
+    """
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
 
-    if 0 < len(names) < 21:  # display per-class legend if < 21 classes
-        for i, y in enumerate(py.T):
+    class_idxs = sorted(list(names.keys()))
+
+    for i, y in enumerate(py.T):
+        if i in class_idxs:
             ax.plot(px, y, linewidth=1, label=f"{names[i]} {ap[i]:.3f}")  # plot(recall, precision)
-    else:
-        ax.plot(px, py, linewidth=1, color="grey")  # plot(recall, precision)
 
     ax.plot(px, py.mean(1), linewidth=3, color="blue", label="all classes %.3f mAP@%.3f" % (ap.mean(), iou))
     ax.set_xlabel("Recall")
@@ -290,7 +300,7 @@ class ObjectDetectionMetrics:
         self.pred_cls = torch.cat(pred_cls_all, axis=-1)
         self.gt_cls = torch.cat(gt_cls_all, axis=-1)
 
-    def get_confusion_matrix(self, conf_threshold, all_iou=False, plot=False):
+    def get_confusion_matrix(self, conf_threshold, all_iou=False, prefix="", plot=False):
         """
         Returns a confusion matrix with predicted class as row index, and gt class as col index.
 
@@ -329,17 +339,22 @@ class ObjectDetectionMetrics:
 
             unmatched_labels_idx = torch.where(pred_per_gt_all == -1)[0]
 
+            class_idxs = sorted(list(self.idx_to_name.keys()))
+
             # note that there is no matrix[0, 0] as there is an infinite number of background boxes...
-            for ci in range(self.num_classes):
-                num_unpredicted = sum(self.gt_cls[unmatched_labels_idx] == ci)
-                matrix[ti, 0, ci + 1] = num_unpredicted
+            for i, c in enumerate(class_idxs):
+            # for c in range(self.num_classes):
+                num_unpredicted = sum(self.gt_cls[unmatched_labels_idx] == c)
+                matrix[ti, 0, i + 1] = num_unpredicted
+                # matrix[ti, 0, c + 1] = num_unpredicted
 
             # get the indices of the labels to which each prediction in this class corresponds.
             # gt_per_pred = torch.zeros(detection_cls.shape[0]) - 1
             # gt_per_pred[gt_pred_matches.nonzero()[:, 0]] = gt_pred_matches.nonzero()[:, 1].float()
 
-            for ci in range(self.num_classes):
-                di = detection_cls == ci
+            for i, c in enumerate(class_idxs):
+            # for c in range(self.num_classes):
+                di = detection_cls == c
 
                 matched_labels_idx = gt_per_pred_all[di].int()
 
@@ -349,8 +364,42 @@ class ObjectDetectionMetrics:
 
                 # print(ci, matched_classes)
 
-                for cj in range(self.num_classes + 1):
-                    matrix[ti, ci + 1, cj] = sum(matched_classes == cj)
+                for j, cj in enumerate([-1] + class_idxs):
+                # for cj in range(self.num_classes+1):
+                #     matrix[ti, i + 1, cj] = sum(matched_classes == cj)
+                    matrix[ti, i + 1, j] = sum(matched_classes == cj + 1)
+
+        if plot:
+            import seaborn
+
+            tick_labels = np.array(["Background"] + [self.idx_to_name[i] for i in sorted(list(self.idx_to_name.keys()))])
+            save_dir = os.path.join(self.save_dir,  f"{prefix}_confusionMatrix_IOU={self.iou_threshold[0]}.png")
+            array = matrix[0].cpu().detach().numpy().astype(np.float64)
+            array /= (array.sum(0).reshape(1, -1) + 1e-9)
+            array[array < 0.005] = np.nan
+
+            fig, ax = plt.subplots(1, 1, figsize=(12, 9), tight_layout=True)
+            nc, nn = self.num_classes, len(self.idx_to_name)  # number of classes, names
+            seaborn.set_theme(font_scale=1.0 if nc < 50 else 0.8)  # for label size
+
+            seaborn.heatmap(
+                array,
+                ax=ax,
+                annot=nc < 30,
+                annot_kws={"size": 8},
+                cmap="Blues",
+                fmt=".3f",
+                square=True,
+                vmin=0.0,
+                xticklabels=tick_labels,
+                yticklabels=tick_labels,
+            ).set_facecolor((1, 1, 1))
+            title = "Confusion Matrix"
+            ax.set_xlabel("True")
+            ax.set_ylabel("Predicted")
+            ax.set_title(title)
+            fig.savefig(save_dir, dpi=250)
+            plt.close(fig)
 
         return matrix
 
@@ -452,7 +501,7 @@ class ObjectDetectionMetrics:
                 plot_curve(x, r_curve[ti], os.path.join(self.save_dir, f"{prefix}_R_curve_IOU={iou}.png"),
                            self.idx_to_name, xlabel="Confidence", ylabel="Recall")
                 plot_curve(x, f1_curve[ti], os.path.join(self.save_dir, f"{prefix}_F1_curve_IOU={iou}.png"),
-                           self.idx_to_name, xlabel="Confidence", ylabel="F1")
+                           self.idx_to_name, xlabel="Confidence", ylabel="F1", show_max=True)
                 plot_pr_curve(x, prec_values[ti], ap[ti], self.iou_threshold[ti],
                               os.path.join(self.save_dir, f"{prefix}_PR_curve_IOU={iou}.png"),
                               self.idx_to_name)

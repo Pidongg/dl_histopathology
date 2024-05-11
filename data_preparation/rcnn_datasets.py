@@ -6,8 +6,9 @@ import os
 import cv2
 import numpy as np
 
-from data_preparation import image_labelling
-from data_preparation import data_utils
+from . import image_labelling, data_utils
+
+from torchvision.transforms import v2 as T
 
 
 class RCNNDataset(torch.utils.data.Dataset):
@@ -77,6 +78,12 @@ class RCNNDataset(torch.utils.data.Dataset):
                 # continue without applying any transforms - limited precision sometimes causes problems
                 print(e)
                 print("Continuing without applying transforms")
+
+                transforms = []
+                transforms.append(T.ToDtype(torch.float, scale=True))
+                transforms.append(T.ToPureTensor())
+                transforms = T.Compose(transforms)
+                image = transforms(image)
 
         return image, target
 

@@ -13,8 +13,8 @@ import torch
 import shutil
 from collections import defaultdict
 
-import data_utils, image_labelling
-from qupath_label_preparation import LabelPreparer
+from . import data_utils, image_labelling
+from .qupath_label_preparation import LabelPreparer
 
 
 class DataPreparer:
@@ -24,15 +24,17 @@ class DataPreparer:
     Args:
         in_root_dir (Path): A path to the root directory of the input dataset.
         in_img_dir (str): The image directory of the input dataset relative to in_root_dir.
+        prepared_root_dir (Path): A path to the root directory to which to write the prepared directory.
+        prepared_img_dir (str): Image directory relative to prepared_root_dir.
 
     Attributes:
-        in_root_dir (Path), in_img_dir (str)
+        in_root_dir (Path), in_img_dir (str), prepared_img_dir (str), prepared_label_dir (str)
 
     Methods:
         get_train_test_val_img_lists: Get image path lists for training, testing, and validation sets
             according to the provided splitting ratio.
     """
-    def __init__(self, in_root_dir, in_img_dir):
+    def __init__(self, in_root_dir, in_img_dir, prepared_root_dir, prepared_img_dir, prepared_label_dir):
         super().__init__()
         # validate arguments
         if not os.path.exists(in_root_dir):
@@ -43,6 +45,9 @@ class DataPreparer:
 
         self.in_root_dir = in_root_dir
         self.in_img_dir = in_img_dir
+        self.prepared_root_dir = prepared_root_dir
+        self.prepared_img_dir = prepared_img_dir
+        self.prepared_label_dir = prepared_label_dir
 
     def get_train_test_val_img_lists(self, train: float, test: float, val: float):
         """
@@ -75,6 +80,37 @@ class DataPreparer:
             "valid": valid_img_list
         }
 
+    def count_objects(self):
+        """
+        Print the number of images in each directory in the prepared image directory,
+            along with the number of objects per image.
+        """
+        root_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir)
+        root_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
+
+        sets = [f for f in os.listdir(root_img_dir) if os.path.isdir(os.path.join(root_img_dir, f))]
+
+        for set_name in sets:
+            num_objects_per_class = defaultdict(int)
+
+            img_dir = os.path.join(root_img_dir, set_name)
+            label_dir = os.path.join(root_label_dir, set_name)
+
+            img_paths = data_utils.list_files_of_a_type(img_dir, ".png")
+
+            for img_path in img_paths:
+                img_name = data_utils.get_filename(img_path)
+                label_path = os.path.join(label_dir, img_name + ".txt")
+
+                bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
+
+                for l in labels:
+                    num_objects_per_class[l] += 1
+
+            print(f"Objects per class in set {set_name} : {num_objects_per_class}")
+            print(f"Number of images in set {set_name}: {len(img_paths)}")
+            num_objects_per_class.clear()
+
 
 class BCSSPreparer(DataPreparer):
     """
@@ -86,14 +122,14 @@ class BCSSPreparer(DataPreparer):
         in_mask_dir (str): The mask directory of the input dataset relative to in_root_dir.
         patch_w (int): Width to use for each image patch, in pixels
         patch_h (int): Height of each image patch in pixels
-        prepared_root_dir (Path): A path to the root directory to be used for the prepared dataset.
-        prepared_img_dir (str): Image directory relative to prepared_root_dir.
+        prepared_root_dir (Path)
+        prepared_img_dir (str)
         prepared_mask_dir (str): Mask directory relative to prepared_root_dir.
+        prepared_label_dir (str)
 
     Attributes:
         in_root_dir (Path), in_img_dir (str), in_mask_dir (str), patch_w (int), patch_h (int),
-        prepared_root_dir (Path), prepared_img_dir (str), prepared_mask_dir (str)
-        label_dir (str): Label directory relative to prepared_root_dir, which will hold any generated label files.
+        prepared_root_dir (Path), prepared_img_dir (str), prepared_mask_dir (str), prepared_label_dir (str)
 
     Methods:
         split_into_patches: Splits each image in a given list into patches, and writes them to a specified directory.
@@ -102,9 +138,9 @@ class BCSSPreparer(DataPreparer):
         show_masks_and_bboxes: Display masks and bboxes overlaid on images in a prepared directory.
     """
     def __init__(self, in_root_dir, in_img_dir, in_mask_dir, patch_w, patch_h,
-                 prepared_root_dir, prepared_img_dir, prepared_mask_dir):
+                 prepared_root_dir, prepared_img_dir, prepared_mask_dir, prepared_label_dir):
 
-        super().__init__(in_root_dir, in_img_dir)
+        super().__init__(in_root_dir, in_img_dir, prepared_root_dir, prepared_img_dir, prepared_label_dir)
 
         if not os.path.exists(os.path.join(in_root_dir, in_mask_dir)):
             raise Exception("Input mask directory does not exist")
@@ -113,13 +149,11 @@ class BCSSPreparer(DataPreparer):
                 len(data_utils.list_files_of_a_type(os.path.join(in_root_dir, in_mask_dir), ".png")):
             raise Exception("Number of images does not match number of masks")
 
-        self.prepared_root_dir = prepared_root_dir
         self.patch_w = patch_w
         self.patch_h = patch_h
         self.in_mask_dir = in_mask_dir
-        self.prepared_img_dir = prepared_img_dir
         self.prepared_mask_dir = prepared_mask_dir
-        self.label_dir = "labels"
+        self.prepared_label_dir = prepared_label_dir
 
     def split_into_patches(self, image_list: list[os.path], set_type: str = "") -> None:
         """
@@ -191,7 +225,7 @@ class BCSSPreparer(DataPreparer):
         if not os.path.exists(mask_path):
             raise Exception("Provided mask file does not exist in the prepared directory.")
 
-        out_dir = os.path.join(self.prepared_root_dir, "labels"), set_type
+        out_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir), set_type
         bboxes, labels, _ = image_labelling.bboxes_from_one_mask(mask_path=mask_path,
                                                                  out_dir=out_dir,
                                                                  yolo=yolo)
@@ -215,7 +249,7 @@ class BCSSPreparer(DataPreparer):
             raise Exception(f"The prepared mask directory {self.prepared_root_dir}/{self.prepared_mask_dir}/{set_type}"
                             f"currently contains no masks.")
 
-        out_dir = os.path.join(self.prepared_root_dir, "labels", set_type)
+        out_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type)
         image_labelling.bboxes_from_multiple_masks(mask_dir_path=mask_dir_path,
                                                    out_dir=out_dir,
                                                    yolo=yolo)
@@ -238,7 +272,7 @@ class BCSSPreparer(DataPreparer):
             mask_path = os.path.join(self.prepared_root_dir, self.prepared_mask_dir, set_type, filename + ".png")
             image_labelling.split_and_show_masks(img_path, mask_path)
 
-            label_path = os.path.join(self.prepared_root_dir, self.label_dir, set_type, filename + ".txt")
+            label_path = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type, filename + ".txt")
             bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
             image_labelling.show_bboxes(img_path, bboxes, labels=labels)
             _ = input("enter to continue")
@@ -252,9 +286,9 @@ class TauPreparer(DataPreparer):
         in_root_dir (Path)
         in_img_dir (str)
         in_label_dir (str): The mask directory of the input dataset relative to in_root_dir.
-        prepared_root_dir (Path): A path to the root directory to be used for the prepared dataset.
-        prepared_img_dir (str): Image directory relative to prepared_root_dir.
-        prepared_label_dir (str): Mask directory relative to prepared_root_dir.
+        prepared_root_dir (str)
+        prepared_img_dir (str)
+        prepared_label_dir (str)
 
     Attributes:
         in_root_dir (Path), in_img_dir (str), in_label_dir (str), prepared_root_dir (Path), prepared_img_dir (str),
@@ -269,16 +303,13 @@ class TauPreparer(DataPreparer):
         count_objects: Count the number of images per set along with number of objects per class.
     """
     def __init__(self, in_root_dir, in_img_dir, in_label_dir, prepared_root_dir, prepared_img_dir, prepared_label_dir):
-        super().__init__(in_root_dir, in_img_dir)
+        super().__init__(in_root_dir, in_img_dir, prepared_root_dir, prepared_img_dir, prepared_label_dir)
 
         # validate arguments
         if not os.path.exists(os.path.join(in_root_dir, in_label_dir)):
             raise Exception("Input annotations directory does not exist")
 
         self.in_label_dir = in_label_dir
-        self.prepared_root_dir = prepared_root_dir
-        self.prepared_img_dir = prepared_img_dir
-        self.prepared_label_dir = prepared_label_dir
 
         self.class_to_idx = {
             'TA': 0,
@@ -408,35 +439,4 @@ class TauPreparer(DataPreparer):
             colours = [class_to_colour[ci] for ci in labels]
             image_labelling.show_bboxes(img_path, bboxes, labels=labels, colours=colours)
             _ = input("enter to continue")
-
-    def count_objects(self):
-        """
-        Print the number of images in each directory in the prepared image directory,
-            along with the number of objects per image.
-        """
-        root_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir)
-        root_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
-
-        sets = [f for f in os.listdir(root_img_dir) if os.path.isdir(os.path.join(root_img_dir, f))]
-
-        for set_name in sets:
-            num_objects_per_class = defaultdict(int)
-
-            img_dir = os.path.join(root_img_dir, set_name)
-            label_dir = os.path.join(root_label_dir, set_name)
-
-            img_paths = data_utils.list_files_of_a_type(img_dir, ".png")
-
-            for img_path in img_paths:
-                img_name = data_utils.get_filename(img_path)
-                label_path = os.path.join(label_dir, img_name + ".txt")
-
-                bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
-
-                for l in labels:
-                    num_objects_per_class[l] += 1
-
-            print(f"Objects per class in set {set_name} : {num_objects_per_class}")
-            print(f"Number of images in set {set_name}: {len(img_paths)}")
-            num_objects_per_class.clear()
 

@@ -1,0 +1,14 @@
+# Classes
+names:
+  1: tumor
+  2: stroma
+  3: lymphocytic_infiltrate
+  4: necrosis_or_debris
+  5: glandular_secretions
+  6: blood
+  9: fat
+  10: plasma_cells
+  11: other_immune_infiltrate
+  13: normal_acinus_or_duct
+  14: lymphatics
+  18: blood_vessel

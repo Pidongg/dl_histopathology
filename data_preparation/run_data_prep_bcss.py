@@ -21,7 +21,8 @@ if __name__ == "__main__":
                                  in_img_dir="images",
                                  in_mask_dir="masks",
                                  prepared_img_dir="images",
-                                 prepared_mask_dir="masks")
+                                 prepared_mask_dir="masks",
+                                 prepared_label_dir="labels")
 
     img_lists = data_preparer.get_train_test_val_img_lists(0.8, 0.1, 0.1)
 

@@ -71,6 +71,11 @@ class Evaluator(ABC):
             self.preds.append(predictions)
             self.gt.append(ground_truths)
 
+        # temp = torch.cat(self.preds, axis=0)
+        # temp_cls = temp[:, -1]
+        # print(torch.unique(temp_cls))
+
+
     def confusion_matrix(self, conf_threshold=0.25, all_iou=False, plot=False):
         if not self.preds and not self.gt:
             raise Exception("No predictions and/or ground truths found")
@@ -128,9 +133,12 @@ class RCNNEvaluator(Evaluator):
             predictions = self.model([x, ])
             pred = predictions[0]
 
-        bboxes = pred['boxes']
-        scores = pred['scores'].unsqueeze(-1)
-        labels = pred['labels'].unsqueeze(-1)
+        labels = pred['labels']
+
+        i = labels != 0  # indices of non-background class predictions
+        bboxes = pred['boxes'][i]
+        scores = pred['scores'][i].unsqueeze(-1)
+        labels = labels[i].unsqueeze(-1) - 1
 
         # predictions (n, 6) for n predictions
         predictions = torch.cat([bboxes, scores, labels], dim=-1)

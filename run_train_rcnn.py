@@ -8,14 +8,11 @@ import torch
 from torch.utils.data import DataLoader
 import tqdm
 import glob
-import matplotlib.pyplot as plt
 import argparse
 import yaml
 import sys
 
-from data_preparation import data_utils
-
-from rcnn_datasets import RCNNDataset
+from data_preparation.rcnn_datasets import RCNNDataset
 
 
 def collate_fn(batch):
@@ -35,7 +32,7 @@ def get_unused_filename(out_dir, filename, extension):
         path_to_use = f"{out_dir}/{filename}{extension}"
     else:
         last_used_path = matching_paths[-1]
-        last_used_filename = data_utils.get_filename(last_used_path)
+        last_used_filename = os.path.splitext(os.path.basename(last_used_path))[0]
         if last_used_filename == filename:
             path_to_use = f"{out_dir}/{filename}_0{extension}"
         else:
@@ -144,32 +141,34 @@ def validate(model, data_loader, device):
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser()
-    #
-    # parser.add_argument("-cfg",
-    #                     help="Path to training configuration file",
-    #                     required=True, default=None)
-    #
-    # parser.add_argument("model_save_dir",
-    #                     help="Path to directory to save models to")
-    # parser.add_argument("plot_save_dir",
-    #                     help="Path to directory to save plots to")
-    #
-    # parser.add_argument("model_name",
-    #                     help="Base name under which to save the model")
-    #
-    # args = parser.parse_args()
-    #
-    # cfg = args.cfg
-    # OUT_MODEL_DIR = args.model_save_dir
-    OUT_MODEL_DIR = "./models/RCNN/Tau"
-    # OUT_PLOTS_DIR = args.plot_save_dir
-    OUT_PLOTS_DIR = "./models.RCNN/Tau/loss_plots"
-    # model_name = args.model_name
-    model_name = "rcnn_tau"
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-cfg",
+                        help="Path to training configuration file",
+                        required=True, default=None)
+
+    parser.add_argument("model_save_dir",
+                        help="Path to directory to save models to")
+
+    parser.add_argument("model_name",
+                        help="Base name under which to save the model")
+
+    parser.add_argument("num_epochs", type=int,
+                        help="Number of epochs to train for")
+
+    args = parser.parse_args()
+
+    cfg = args.cfg
+    OUT_MODEL_DIR = args.model_save_dir
+    # OUT_MODEL_DIR = "./models/RCNN/Tau"
+    model_name = args.model_name
+    # model_name = "rcnn_tau"
+    num_epochs = args.num_epochs
 
     # train on the GPU or on the CPU, if a GPU is not available
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+    print("using device: ", device)
 
     # specify dirs to save models and plots to
     # OUT_MODEL_DIR = "./rcnn/models"
@@ -179,37 +178,34 @@ if __name__ == "__main__":
         os.makedirs(OUT_MODEL_DIR)
 
     # get class dictionary
-    # with open(cfg, "r") as stream:
-    #     cfg_dict = yaml.safe_load(stream)
-    #
-    #     try:
-    #         class_dict = cfg_dict['names']
-    #         path = cfg_dict['path']
-    #         img_train_dir = cfg_dict['train']
-    #         img_val_dir = cfg_dict['val']
-    #         label_train_dir = cfg_dict['train_labels']
-    #         label_val_dir = cfg_dict['val_labels']
-    #
-    #     except KeyError:
-    #         sys.exit("Provided yaml file is expected to contain a 'names' field that holds a dictionary of"
-    #                  "class indices to names, a 'path' field indicating the dataset's root directory,"
-    #                  "a 'train' field indicating the training image directory relative to 'path',"
-    #                  "a 'val' field indicating the validation image directory relative to 'path',"
-    #                  "and 'train_labels' and 'val_labels' fields.")
-    #
-    # num_classes = len(class_dict.keys())
-    # img_train_dir = os.path.join(path, img_train_dir)
-    # img_val_dir = os.path.join(path, img_val_dir)
-    # label_train_dir = os.path.join(path, label_train_dir)
-    # label_val_dir = os.path.join(path, label_val_dir)
+    with open(cfg, "r") as stream:
+        cfg_dict = yaml.safe_load(stream)
 
-    img_train_dir = "./prepared_data/Tau/images/train"
-    img_val_dir = "./prepared_data/Tau/images/valid"
-    label_train_dir = "./prepared_data/Tau/labels/train"
-    label_val_dir = "./prepared_data/Tau/labels/valid"
+        try:
+            class_dict = cfg_dict['names']
+            path = cfg_dict['path']
+            img_train_dir = cfg_dict['train']
+            img_val_dir = cfg_dict['val']
+            label_train_dir = cfg_dict['train_labels']
+            label_val_dir = cfg_dict['val_labels']
 
-"./models/RCNN/Tau" "./models.RCNN/Tau/loss_plots" "rcnn_tau"
+        except KeyError:
+            sys.exit("Provided yaml file is expected to contain a 'names' field that holds a dictionary of"
+                     "class indices to names, a 'path' field indicating the dataset's root directory,"
+                     "a 'train' field indicating the training image directory relative to 'path',"
+                     "a 'val' field indicating the validation image directory relative to 'path',"
+                     "and 'train_labels' and 'val_labels' fields.")
 
+    num_classes = len(class_dict.keys()) + 1  # one extra for background
+    img_train_dir = os.path.join(path, img_train_dir)
+    img_val_dir = os.path.join(path, img_val_dir)
+    label_train_dir = os.path.join(path, label_train_dir)
+    label_val_dir = os.path.join(path, label_val_dir)
+
+    # img_train_dir = "./prepared_data/Tau/images/train"
+    # img_val_dir = "./prepared_data/Tau/images/valid"
+    # label_train_dir = "./prepared_data/Tau/labels/train"
+    # label_val_dir = "./prepared_data/Tau/labels/valid"
 
     # use our dataset and defined transformations
     dataset = RCNNDataset(img_dir=img_train_dir,
@@ -246,6 +242,8 @@ if __name__ == "__main__":
     # get the model using our helper function
     model = get_model_instance_segmentation(num_classes)
 
+    # model.load_state_dict(torch.load("models/RCNN/Tau/rcnn_tau_4.pth"))
+
     # move model to the right device
     model.to(device)
 
@@ -264,9 +262,6 @@ if __name__ == "__main__":
         step_size=3,
         gamma=0.1
     )
-
-    # training for `num_epochs` epochs
-    num_epochs = 5
 
     # save the state dict of the model with the lowest loss on the validation step throughout training
     best_valid_loss = float('inf')
@@ -302,26 +297,26 @@ if __name__ == "__main__":
             best_model_state_dict = model.state_dict()
 
     # display and save loss plots
-    figure_1, train_ax = plt.subplots()
-    figure_2, valid_ax = plt.subplots()
-
-    train_ax.plot(train_losses, color='blue')
-    train_ax.set_xlabel('iterations')
-    train_ax.set_ylabel('train loss')
-
-    valid_ax.plot(valid_losses, color='red')
-    valid_ax.set_xlabel('iterations')
-    valid_ax.set_ylabel('validation loss')
-
-    train_fig_out_path = get_unused_filename(OUT_PLOTS_DIR, "train_loss", ".png")
-    valid_fig_out_path = get_unused_filename(OUT_PLOTS_DIR, "valid_loss", ".png")
-
-    figure_1.savefig(train_fig_out_path)
-    figure_2.savefig(valid_fig_out_path)
-    print('SAVING PLOTS COMPLETE...')
-
-    # after all epochs have been completed, save the model with the best performance
-    model_name = "best_model"
+    # figure_1, train_ax = plt.subplots()
+    # figure_2, valid_ax = plt.subplots()
+    #
+    # train_ax.plot(train_losses, color='blue')
+    # train_ax.set_xlabel('iterations')
+    # train_ax.set_ylabel('train loss')
+    #
+    # valid_ax.plot(valid_losses, color='red')
+    # valid_ax.set_xlabel('iterations')
+    # valid_ax.set_ylabel('validation loss')
+    #
+    # train_fig_out_path = get_unused_filename(OUT_PLOTS_DIR, "train_loss", ".png")
+    # valid_fig_out_path = get_unused_filename(OUT_PLOTS_DIR, "valid_loss", ".png")
+    #
+    # figure_1.savefig(train_fig_out_path)
+    # figure_2.savefig(valid_fig_out_path)
+    # print('SAVING PLOTS COMPLETE...')
+    #
+    # # after all epochs have been completed, save the model with the best performance
+    # model_name = "best_model"
 
     # get a file path not already in use that also uses the filename
     model_path = get_unused_filename(OUT_MODEL_DIR, model_name, ".pth")

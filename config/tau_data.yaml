@@ -2,7 +2,7 @@ path: C:\Users\kwanw\PycharmProjects\dl_histopathology\prepared_data\Tau  # abso
 train: images/train  # train images (relative to 'path')
 val: images/valid   # val images (relative to 'path' - also, keep it the same for simplicity for now)
 train_labels: labels/train
-val_labels: labels/val
+val_labels: labels/valid
 
 # Classes
 names:

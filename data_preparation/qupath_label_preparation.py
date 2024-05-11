@@ -4,7 +4,7 @@
 import os
 import tqdm
 
-import data_utils
+from . import data_utils
 
 
 class Label:

@@ -1,12 +1,10 @@
-import os
-
 from ultralytics import YOLO
 import torch
 from evaluation.evaluator import YoloEvaluator, RCNNEvaluator
 from data_preparation import data_utils
 import argparse
 import yaml
-import train_rcnn
+import run_train_rcnn
 
 
 def main():
@@ -87,7 +85,7 @@ def main():
 
         evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
 
-        matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False)
+        matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True)
         print(matrix)
 
         print("mAP@50: ", evaluator.map50())
@@ -96,9 +94,10 @@ def main():
     elif args.rcnn:
         # load model
         # num_classes = len(class_dict.keys())
-        num_classes = 23
-        model = train_rcnn.get_model_instance_segmentation(num_classes)
-        model.load_state_dict(torch.load("./rcnn/models/model1_3.pth"))
+        num_classes = len(class_dict) + 1
+        model = run_train_rcnn.get_model_instance_segmentation(num_classes)
+        model.load_state_dict(torch.load(model_path))
+        model.to(device)
 
         evaluator = RCNNEvaluator(model,
                                   test_imgs=test_images,
@@ -107,7 +106,15 @@ def main():
                                   class_dict=class_dict,
                                   save_dir=save_dir)
 
-        print(evaluator.infer_for_one_img("./prepared_data/Tau/images/valid/747297 [d=0.98892,x=86867,y=37975,w=506,h=506].png"))
+        evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
+
+        matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True)
+        print(matrix)
+
+        print("mAP@50: ", evaluator.map50())
+        print("mAP@50-95: ", evaluator.map50_95())
+
+        # print(evaluator.infer_for_one_img("./prepared_data/Tau/images/valid/747297 [d=0.98892,x=86867,y=37975,w=506,h=506].png"))
 
 
 if __name__ == "__main__":
