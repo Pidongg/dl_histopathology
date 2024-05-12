@@ -1,7 +1,11 @@
 # dl_histopathology
 
-Run prepare_data to get data into the format needed for training. (Performs patching and extracts bounding boxes from mask information.)
+Run `./data_preparation/run_data_prep_tau.py` or `./data_preparation/run_data_prep_bcss.py` to get data into the format needed for training.
 
-Datasets should be stored in a directory named for that dataset, with subdirectories "images" and "masks".
+Datasets should include a directory named 'images', a directory named 'masks' if masks are available, and a directory named 'labels' for bounding box text files.
 
-Masks are stored as single-channel .png images, with each pixel value indicating that pixel's class.
+Run `./yolo_scripts/run_train_yolo.py` to train a YOLOv8 model instance, and `./run_train_rcnn.py` to train a Faster R-CNN model instance.
+
+Run `./run_eval.py` to calculate evaluation metrics for a given model and test set.
+
+Trained models are available in the `./models` directory.
