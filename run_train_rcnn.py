@@ -170,10 +170,6 @@ if __name__ == "__main__":
 
     print("using device: ", device)
 
-    # specify dirs to save models and plots to
-    # OUT_MODEL_DIR = "./rcnn/models"
-    # OUT_PLOTS_DIR = "./rcnn/loss_plots"
-
     if not os.path.exists(OUT_MODEL_DIR):
         os.makedirs(OUT_MODEL_DIR)
 
@@ -296,27 +292,8 @@ if __name__ == "__main__":
             best_valid_loss = valid_loss
             best_model_state_dict = model.state_dict()
 
-    # display and save loss plots
-    # figure_1, train_ax = plt.subplots()
-    # figure_2, valid_ax = plt.subplots()
-    #
-    # train_ax.plot(train_losses, color='blue')
-    # train_ax.set_xlabel('iterations')
-    # train_ax.set_ylabel('train loss')
-    #
-    # valid_ax.plot(valid_losses, color='red')
-    # valid_ax.set_xlabel('iterations')
-    # valid_ax.set_ylabel('validation loss')
-    #
-    # train_fig_out_path = get_unused_filename(OUT_PLOTS_DIR, "train_loss", ".png")
-    # valid_fig_out_path = get_unused_filename(OUT_PLOTS_DIR, "valid_loss", ".png")
-    #
-    # figure_1.savefig(train_fig_out_path)
-    # figure_2.savefig(valid_fig_out_path)
-    # print('SAVING PLOTS COMPLETE...')
-    #
-    # # after all epochs have been completed, save the model with the best performance
-    # model_name = "best_model"
+    # after all epochs have been completed, save the model with the best performance
+    model_name = "best_model"
 
     # get a file path not already in use that also uses the filename
     model_path = get_unused_filename(OUT_MODEL_DIR, model_name, ".pth")

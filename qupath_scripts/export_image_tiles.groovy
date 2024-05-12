@@ -3,8 +3,8 @@ def imageData = getCurrentImageData()
 
 // Define output path
 def name = GeneralTools.stripExtension(imageData.getServer().getMetadata().getName())
-// def pathOutput = buildFilePath(/PATH_TO_OUTPUT_DIRECTORY/, name)
-def pathOutput = buildFilePath("C:/Users/kwanw/PycharmProjects/dl_histopathology/datasets/Tau/images/BG", name)
+// comment out the following line and replace the placeholder
+def pathOutput = buildFilePath(/PATH_TO_OUTPUT_DIRECTORY/, name)
 mkdirs(pathOutput)
 
 // Define output resolution in calibrated units (e.g. µm if available)
