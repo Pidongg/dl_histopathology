@@ -114,9 +114,6 @@ def main():
         print("mAP@50: ", evaluator.map50())
         print("mAP@50-95: ", evaluator.map50_95())
 
-        # print(evaluator.infer_for_one_img("./prepared_data/Tau/images/valid/747297 [d=0.98892,x=86867,y=37975,w=506,h=506].png"))
-
 
 if __name__ == "__main__":
     main()
-

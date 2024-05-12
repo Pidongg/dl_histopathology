@@ -20,7 +20,6 @@ def main():
     pretrained_model = args.pt
     cfg = args.cfg
 
-
     # Load a pretrained YOLO model (recommended for training)
     model = YOLO(pretrained_model)
     model.to('cuda')
