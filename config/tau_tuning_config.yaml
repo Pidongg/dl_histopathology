@@ -1,4 +1,4 @@
-data: "./config/tau_data.yaml"
+data: "./tau_data.yaml"
 epochs: 10
 iterations: 100
 optimizer: 'AdamW'

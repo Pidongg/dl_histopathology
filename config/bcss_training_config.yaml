@@ -1,4 +1,4 @@
-data: "../config/bcss_data.yaml"
+data: "./bcss_data.yaml"
 epochs: 100
 optimizer: 'AdamW'
 plots: True

@@ -1,4 +1,4 @@
-path: C:\Users\kwanw\PycharmProjects\dl_histopathology\prepared_data\Tau  # absolute path to dataset root dir
+path: "../prepared_data/Tau"  # absolute path to dataset root dir
 train: images/train  # train images (relative to 'path')
 val: images/valid   # val images (relative to 'path' - also, keep it the same for simplicity for now)
 train_labels: labels/train
@@ -10,4 +10,3 @@ names:
   1: CB
   2: NFT
   3: tau_fragments
-#  4: non_tau

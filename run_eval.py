@@ -71,10 +71,7 @@ def main():
     # run inference with the provided model
     if args.yolo:
         model = YOLO(model_path)
-        # model = YOLO("./models/YOLOv8/Tau/0_baseline/weights/best.pt")
         model.to(device)
-
-        # save_dir = "./eval_output"
 
         evaluator = YoloEvaluator(model,
                                   test_imgs=test_images,
@@ -93,7 +90,6 @@ def main():
 
     elif args.rcnn:
         # load model
-        # num_classes = len(class_dict.keys())
         num_classes = len(class_dict) + 1
         model = run_train_rcnn.get_model_instance_segmentation(num_classes)
         model.load_state_dict(torch.load(model_path))

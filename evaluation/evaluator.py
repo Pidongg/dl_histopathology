@@ -4,11 +4,7 @@ import tqdm
 from data_preparation import data_utils, image_labelling
 from .metrics import ObjectDetectionMetrics
 from abc import ABC, abstractmethod
-import cv2
-import numpy as np
 from torchvision.io import read_image
-
-from torchvision.models.detection import fasterrcnn_resnet50_fpn, FasterRCNN_ResNet50_FPN_Weights
 
 
 class Evaluator(ABC):
@@ -70,11 +66,6 @@ class Evaluator(ABC):
 
             self.preds.append(predictions)
             self.gt.append(ground_truths)
-
-        # temp = torch.cat(self.preds, axis=0)
-        # temp_cls = temp[:, -1]
-        # print(torch.unique(temp_cls))
-
 
     def confusion_matrix(self, conf_threshold=0.25, all_iou=False, plot=False):
         if not self.preds and not self.gt:

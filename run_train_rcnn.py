@@ -160,9 +160,7 @@ if __name__ == "__main__":
 
     cfg = args.cfg
     OUT_MODEL_DIR = args.model_save_dir
-    # OUT_MODEL_DIR = "./models/RCNN/Tau"
     model_name = args.model_name
-    # model_name = "rcnn_tau"
     num_epochs = args.num_epochs
 
     # train on the GPU or on the CPU, if a GPU is not available
@@ -197,11 +195,6 @@ if __name__ == "__main__":
     img_val_dir = os.path.join(path, img_val_dir)
     label_train_dir = os.path.join(path, label_train_dir)
     label_val_dir = os.path.join(path, label_val_dir)
-
-    # img_train_dir = "./prepared_data/Tau/images/train"
-    # img_val_dir = "./prepared_data/Tau/images/valid"
-    # label_train_dir = "./prepared_data/Tau/labels/train"
-    # label_val_dir = "./prepared_data/Tau/labels/valid"
 
     # use our dataset and defined transformations
     dataset = RCNNDataset(img_dir=img_train_dir,
@@ -299,4 +292,3 @@ if __name__ == "__main__":
     model_path = get_unused_filename(OUT_MODEL_DIR, model_name, ".pth")
 
     torch.save(best_model_state_dict, model_path)
-

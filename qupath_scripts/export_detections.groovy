@@ -4,7 +4,7 @@ def imageData = getCurrentImageData()
 def server = getCurrentServer()
 
 def imageName = GeneralTools.stripExtension(imageData.getServer().getMetadata().getName())
-// comment out the following line and replace the placeholder
+// uncomment the following line and replace the placeholder
 // def outDir = /PATH_TO_OUTPUT_DIR/
 mkdirs(outDir)
 

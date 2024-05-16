@@ -1,5 +1,3 @@
-# referenced the docs: https://docs.ultralytics.com/usage/python/
-
 from ultralytics import YOLO
 import yaml
 import argparse

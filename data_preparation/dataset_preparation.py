@@ -315,8 +315,7 @@ class TauPreparer(DataPreparer):
             'TA': 0,
             'CB': 1,
             'NFT': 2,
-            'tau_fragments': 3,
-            # 'non_tau': 4
+            'tau_fragments': 3
         }
 
     def prepare_labels_for_yolo(self):
@@ -419,9 +418,9 @@ class TauPreparer(DataPreparer):
             set_type (str): Name of set to view masks and bboxes from (e.g. "train", "test", "valid").
         """
         img_paths = data_utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
-                                                            self.prepared_img_dir,
-                                                            set_type),
-                                               ".png")
+                                                                 self.prepared_img_dir,
+                                                                 set_type),
+                                                     ".png")
 
         class_to_colour = {
             0: "green",

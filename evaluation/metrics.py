@@ -1,4 +1,9 @@
 # Computing validation metrics for models.
+# Where explicitly noted, this file contains code based on Ultralytics' YOLOv8 source code, available at
+# https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
+# under the AGPL-3.0 license, which therefore also covers this code.
+# The full text of the license may be found at https://www.gnu.org/licenses/agpl-3.0.txt.
+# (last updated 07/05/2024)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -107,6 +112,7 @@ def smooth(y, f=0.05):
 def plot_curve(px, py, save_dir, names: dict[int, str], xlabel, ylabel, show_max=False):
     """
     Plots a curve.
+    Adapted from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
 
     Takes:
         show_max (bool): If true, show the x-value that maximises y.
@@ -139,6 +145,7 @@ def plot_curve(px, py, save_dir, names: dict[int, str], xlabel, ylabel, show_max
 def plot_pr_curve(px, py, ap, iou, save_dir="pr_curve.png", names=()):
     """
     Plots a precision-recall curve.
+    Adapted from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
     """
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
     py = np.stack(py, axis=1)
@@ -163,7 +170,6 @@ def plot_pr_curve(px, py, ap, iou, save_dir="pr_curve.png", names=()):
 class ObjectDetectionMetrics:
     """
     This class is for computing detection metrics such as mean average precision (mAP) of an object detection model.
-    Based on https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
 
     Args:
         save_dir (Path): A path to the directory where the output plots will be saved. Defaults to current directory.
@@ -253,7 +259,6 @@ class ObjectDetectionMetrics:
             iou = box_iou(pred[:, :4], gt[:, :4])
 
             # calculate pred_true for each prediction.
-
             # tensor[t, num_preds]
             correct = np.zeros((t, pred_cls.shape[0]))
 
@@ -333,27 +338,17 @@ class ObjectDetectionMetrics:
             detection_cls = self.pred_cls[self.conf >= conf_threshold]
 
             # objects wrongly predicted as background:
-            # find labels that don't correspond to any preds, i.e. do not appear in gt_per_pred.
-            # pred_per_gt = torch.zeros(gt_cls.shape[0]) - 1
-            # pred_per_gt[gt_pred_matches.nonzero()[:, 1]] = gt_pred_matches.nonzero()[:, 0].float()
-
+            # find labels that don't correspond to any preds.
             unmatched_labels_idx = torch.where(pred_per_gt_all == -1)[0]
 
             class_idxs = sorted(list(self.idx_to_name.keys()))
 
             # note that there is no matrix[0, 0] as there is an infinite number of background boxes...
             for i, c in enumerate(class_idxs):
-            # for c in range(self.num_classes):
                 num_unpredicted = sum(self.gt_cls[unmatched_labels_idx] == c)
                 matrix[ti, 0, i + 1] = num_unpredicted
-                # matrix[ti, 0, c + 1] = num_unpredicted
-
-            # get the indices of the labels to which each prediction in this class corresponds.
-            # gt_per_pred = torch.zeros(detection_cls.shape[0]) - 1
-            # gt_per_pred[gt_pred_matches.nonzero()[:, 0]] = gt_pred_matches.nonzero()[:, 1].float()
 
             for i, c in enumerate(class_idxs):
-            # for c in range(self.num_classes):
                 di = detection_cls == c
 
                 matched_labels_idx = gt_per_pred_all[di].int()
@@ -362,14 +357,12 @@ class ObjectDetectionMetrics:
                 matched_classes = self.gt_cls[matched_labels_idx].detach() + 1  # increment to allow for background class.
                 matched_classes[matched_labels_idx == -1] = 0  # background class, i.e. no gt matches.
 
-                # print(ci, matched_classes)
-
                 for j, cj in enumerate([-1] + class_idxs):
-                # for cj in range(self.num_classes+1):
-                #     matrix[ti, i + 1, cj] = sum(matched_classes == cj)
                     matrix[ti, i + 1, j] = sum(matched_classes == cj + 1)
 
         if plot:
+            # The following code is adapted from
+            # https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py.
             import seaborn
 
             tick_labels = np.array(["Background"] + [self.idx_to_name[i] for i in sorted(list(self.idx_to_name.keys()))])
@@ -406,7 +399,7 @@ class ObjectDetectionMetrics:
     def ap_per_class(self, plot=False, plot_all=False, prefix=""):
         """
         Calculates AP per class for each IOU threshold given.
-        Based on https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py.
+        Adapted from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py.
 
         Args:
             plot (bool): Flag indicating whether to save plots or not.

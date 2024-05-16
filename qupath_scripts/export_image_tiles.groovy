@@ -3,8 +3,8 @@ def imageData = getCurrentImageData()
 
 // Define output path
 def name = GeneralTools.stripExtension(imageData.getServer().getMetadata().getName())
-// comment out the following line and replace the placeholder
-def pathOutput = buildFilePath(/PATH_TO_OUTPUT_DIRECTORY/, name)
+// uncomment the following line and replace the placeholder
+// def pathOutput = buildFilePath(/PATH_TO_OUTPUT_DIRECTORY/, name)
 mkdirs(pathOutput)
 
 // Define output resolution in calibrated units (e.g. µm if available)
