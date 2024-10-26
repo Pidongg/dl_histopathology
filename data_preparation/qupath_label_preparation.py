@@ -100,8 +100,8 @@ class LabelPreparer:
 
                 with open(output_path, 'w') as filtered_detections:
                     for line in detections:
-                        object_label = line.split(':')[0]
-                        if object_label not in ["[Unlabelled] ", "[Others] "]:
+                        object_label = line.split()[2]
+                        if object_label in ["TA", "CB", "NFT", "tau_fragments", "non_tau"]:
                             filtered_detections.write(line)
 
     def separate_labels_by_tile(self):
