@@ -1,4 +1,4 @@
-data: "./tau_data.yaml"
+data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
 epochs: 300
 optimizer: 'AdamW'
 plots: True
@@ -13,7 +13,7 @@ hsv_h: 0.01225
 hsv_s: 0.40973
 hsv_v: 0.24328
 degrees: 36.35184
-translate: 0.09625
+translate: 0.09625is 
 scale: 0.37703
 shear: 0.0
 perspective: 0.0

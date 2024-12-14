@@ -1,8 +1,7 @@
-path: "../prepared_data/Tau"  # absolute path to dataset root dir
-train: images/train  # train images (relative to 'path')
-val: images/valid   # val images (relative to 'path' - also, keep it the same for simplicity for now)
-train_labels: labels/train
-val_labels: labels/valid
+path: "/local/scratch/pz286"  # changed to parent directory
+train: images/train  
+val: images/validation
+test: images/test
 
 # Classes
 names:
