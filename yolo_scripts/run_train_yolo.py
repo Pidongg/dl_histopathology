@@ -1,17 +1,18 @@
 from ultralytics import YOLO
 import yaml
 import argparse
+import torch
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-pt",
                         help="Path to pretrained model",
-                        default='yolov8n.pt')
+                        default='yolo11n.pt')
 
     parser.add_argument("-cfg",
                         help="Path to training configuration file",
-                        required=True, default=None)
+                        default='C:/Users/peiya/Desktop/dissertation/dl_histopathology/config/tau_training_config.yaml')
 
     args = parser.parse_args()
 
@@ -20,7 +21,8 @@ def main():
 
     # Load a pretrained YOLO model (recommended for training)
     model = YOLO(pretrained_model)
-    model.to('cuda')
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model.to(device)
 
     print("Device:", model.device.type)
 
