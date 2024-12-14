@@ -12,7 +12,7 @@ def main():
 
     parser.add_argument("-cfg",
                         help="Path to training configuration file",
-                        default='C:/Users/peiya/Desktop/dissertation/dl_histopathology/config/tau_training_config.yaml')
+                        default='/local/scratch/pz286/dl_histopathology/config/tau_training_config.yaml')
 
     args = parser.parse_args()
 
@@ -25,6 +25,11 @@ def main():
     model.to(device)
 
     print("Device:", model.device.type)
+    if device == 'cuda':
+        print("CUDA Device:", torch.cuda.get_device_name(0))
+        print("Memory Usage:")
+        print(f"Allocated: {torch.cuda.memory_allocated(0)/1024**2:.2f}MB")
+        print(f"Cached: {torch.cuda.memory_reserved(0)/1024**2:.2f}MB")
 
     # get hyperparameters
     with open(cfg, "r") as stream:

@@ -7,7 +7,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-pt", "--pretrained",
                         help="Path to pretrained model",
-                        default='yolov8n.pt')
+                        default='yolo11n.pt')
 
     parser.add_argument("-cfg", "--config",
                         help="Path to conf file for tuning",
