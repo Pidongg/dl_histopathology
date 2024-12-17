@@ -8,8 +8,6 @@ import numpy as np
 
 from . import image_labelling, data_utils
 
-from torchvision.transforms import v2 as T
-
 class RCNNDataset(torch.utils.data.Dataset):
     def __init__(self, img_dir, label_dir, width, height, device, transforms=None):
         self.transforms = transforms
@@ -31,6 +29,8 @@ class RCNNDataset(torch.utils.data.Dataset):
         
         # Get relative paths for matching with labels
         self.all_images = [os.path.relpath(path, img_dir) for path in self.image_paths]
+        
+        print(f"Found {len(self.image_paths)} images in {img_dir}")
 
     def __getitem__(self, idx):
         # get the image path
@@ -42,6 +42,8 @@ class RCNNDataset(torch.utils.data.Dataset):
 
         # read the image
         image = cv2.imread(image_path)
+        if image is None:
+            raise ValueError(f"Could not read image at {image_path}")
 
         # convert BGR to RGB color format
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
@@ -53,55 +55,66 @@ class RCNNDataset(torch.utils.data.Dataset):
         # Create parent directories if they don't exist
         os.makedirs(os.path.dirname(label_path), exist_ok=True)
 
-        # box coordinates and labels are extracted from the corresponding yolo file
-        boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
-        
-        # Convert to CPU numpy for transforms
-        boxes = boxes.cpu().numpy()
-        labels = labels.cpu().numpy().astype(int)
+        try:
+            # box coordinates and labels are extracted from the corresponding yolo file
+            boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, 
+                                                                   width=self.width, 
+                                                                   height=self.height, 
+                                                                   normalised=False)
+            
+            # Convert to numpy arrays if they're tensors
+            if isinstance(boxes, torch.Tensor):
+                boxes = boxes.cpu().numpy()
+            if isinstance(labels, torch.Tensor):
+                labels = labels.cpu().numpy()
+            
+            # Ensure we have numpy arrays
+            boxes = np.array(boxes)
+            labels = np.array(labels)
+            
+            # Convert labels to integers
+            labels = labels.astype(int)
 
-        # area of the bounding boxes
-        area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
+            # area of the bounding boxes
+            area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
 
-        # no crowd instances
-        iscrowd = torch.zeros((boxes.shape[0],), dtype=torch.int64)
+            # no crowd instances
+            iscrowd = torch.zeros((boxes.shape[0],), dtype=torch.int64)
 
-        # prepare the final `target` dictionary
-        target = {
-            "boxes": boxes,
-            "labels": labels,
-            "area": area,
-            "iscrowd": iscrowd,
-            "image_id": torch.tensor([idx])
-        }
+            # prepare the final `target` dictionary
+            target = {
+                "boxes": boxes,
+                "labels": labels,
+                "area": area,
+                "iscrowd": iscrowd,
+                "image_id": torch.tensor([idx])
+            }
 
-        # apply the image transforms
-        if self.transforms:
-            try:
-                sample = self.transforms(image=image,
-                                      bboxes=target['boxes'],
-                                      labels=target['labels'])
-                image = sample['image']
-                target['boxes'] = torch.Tensor(sample['bboxes'])
-                target['labels'] = torch.tensor(sample['labels'])
-            except ValueError as e:
-                print(e)
-                print("Continuing without applying transforms")
+            # apply the image transforms
+            if self.transforms:
+                try:
+                    sample = self.transforms(image=image,
+                                          bboxes=target['boxes'],
+                                          labels=target['labels'])
+                    image = sample['image']
+                    target['boxes'] = torch.Tensor(sample['bboxes'])
+                    target['labels'] = torch.tensor(sample['labels'])
+                except ValueError as e:
+                    print(f"Transform error for {image_path}: {e}")
+                    print("Continuing without transforms")
 
-                transforms = []
-                transforms.append(T.ToDtype(torch.float, scale=True))
-                transforms.append(T.ToPureTensor())
-                transforms = T.Compose(transforms)
-                image = transforms(image)
+            # Move everything to device and ensure correct types
+            target['boxes'] = torch.as_tensor(target['boxes'], dtype=torch.float32).to(self.device)
+            target['labels'] = torch.as_tensor(target['labels'], dtype=torch.int64).to(self.device)
+            target['area'] = torch.as_tensor(target['area'], dtype=torch.float32).to(self.device)
+            target['iscrowd'] = target['iscrowd'].to(self.device)
+            target['image_id'] = target['image_id'].to(self.device)
 
-        # Move everything to device and ensure correct types
-        target['boxes'] = torch.as_tensor(target['boxes'], dtype=torch.float32).to(self.device)
-        target['labels'] = torch.as_tensor(target['labels'], dtype=torch.int64).to(self.device)
-        target['area'] = torch.as_tensor(target['area'], dtype=torch.float32).to(self.device)
-        target['iscrowd'] = target['iscrowd'].to(self.device)
-        target['image_id'] = target['image_id'].to(self.device)
+            return image, target
 
-        return image, target
+        except Exception as e:
+            print(f"Error processing {image_path} with label {label_path}: {str(e)}")
+            raise
 
     def __len__(self):
         return len(self.image_paths)
