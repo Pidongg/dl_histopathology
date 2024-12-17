@@ -59,10 +59,24 @@ class RCNNDataset(torch.utils.data.Dataset):
 
             # box coordinates and labels are extracted from the corresponding yolo file
             boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
-            
-            # Convert to numpy arrays
-            boxes = np.array(boxes)
-            labels = np.array(labels, dtype=int)
+
+            # Move tensors to CPU before converting to numpy if needed
+            if isinstance(boxes, torch.Tensor):
+                if boxes.is_cuda:
+                    boxes = boxes.cpu()
+                boxes = boxes.numpy()
+            else:
+                boxes = np.array(boxes)
+
+            if isinstance(labels, torch.Tensor):
+                if labels.is_cuda:
+                    labels = labels.cpu()
+                labels = labels.numpy()
+            else:
+                labels = np.array(labels)
+
+            # Convert labels to integers
+            labels = labels.astype(int)
 
             # apply the image transforms BEFORE incrementing labels
             if self.transforms:
