@@ -1,3 +1,6 @@
+import multiprocessing
+# Must be at the very beginning of the script
+multiprocessing.set_start_method('spawn', force=True)
 import os
 
 import torchvision
@@ -43,7 +46,6 @@ def get_unused_filename(out_dir, filename, extension):
     return path_to_use
 
 
-# define the training transforms
 def get_train_transform():
     return A.Compose([
         A.Flip(p=0.5),
@@ -58,7 +60,6 @@ def get_train_transform():
     })
 
 
-# define the validation transforms
 def get_valid_transform():
     return A.Compose([
         ToTensorV2(p=1.0),
@@ -75,70 +76,62 @@ def get_model_instance_segmentation(num_classes):
 
     # get number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
-    # replace the pre-trained head with a new one with the required number of classes
+    # replace the pre-trained head with a new one
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
     return model
 
 
 def train_one_epoch(model, optimizer, data_loader, device):
-    """
-    Written with reference to https://debuggercafe.com/custom-object-detection-using-pytorch-faster-rcnn/
-    Function for running training iterations
-    """
     model.train()
     epoch_loss = 0
     print('Training')
-
-    # initialize tqdm progress bar
+    
     prog_bar = tqdm.tqdm(data_loader, total=len(data_loader))
-
+    
+    optimizer.zero_grad()
+    accumulation_steps = 4  # Accumulate gradients to simulate larger batch size
+    
     for i, (images, targets) in enumerate(prog_bar):
-        optimizer.zero_grad()
-
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-        loss_dict = model(images, targets)  # r-cnn gives back loss values?
+        loss_dict = model(images, targets)
         losses = sum(loss for loss in loss_dict.values())
         loss_value = losses.item()
         epoch_loss += loss_value
 
+        # Normalize loss for gradient accumulation
+        losses = losses / accumulation_steps
         losses.backward()
-        optimizer.step()
 
-        # update the loss value beside the progress bar for each iteration
-        prog_bar.set_description(desc=f"Loss: {loss_value:.4f}")
+        if (i + 1) % accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+
+        prog_bar.set_description(f'Loss: {loss_value:.4f}')
 
     return epoch_loss / len(data_loader)
 
 
 def validate(model, data_loader, device):
-    """
-    Function for evaluating performance on the validation set at each epoch
-    """
-#     model.eval() # commenting this out so we can get the loss
+    model.train()  # Keep in train mode to get losses
     epoch_loss = 0
     print('Validating')
 
-    # initialize tqdm progress bar
     prog_bar = tqdm.tqdm(data_loader, total=len(data_loader))
 
     with torch.no_grad():
         for i, (images, targets) in enumerate(prog_bar):
-            optimizer.zero_grad()
-
             images = list(image.to(device) for image in images)
-            targets = [{k: v.to(device) for k, v in t.items()}
-                       for t in targets]
+            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
             loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
             loss_value = losses.item()
             epoch_loss += loss_value
 
-            # update the loss value beside the progress bar for each iteration
-            prog_bar.set_description(desc=f"Loss: {loss_value:.4f}")
+            prog_bar.set_description(f'Loss: {loss_value:.4f}')
 
     return epoch_loss / len(data_loader)
 
@@ -167,8 +160,7 @@ if __name__ == "__main__":
     num_epochs = args.num_epochs
 
     # train on the GPU or on the CPU, if a GPU is not available
-    device = torch.device(
-        'cuda') if torch.cuda.is_available() else torch.device('cpu')
+    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
 
     print("using device: ", device)
 
@@ -212,7 +204,7 @@ if __name__ == "__main__":
                                 label_dir=label_val_dir,
                                 width=512,
                                 height=512,
-                                transforms=get_train_transform(),
+                                transforms=get_valid_transform(),
                                 device=device)
     
     print(f"\nDataset information:")
@@ -222,26 +214,22 @@ if __name__ == "__main__":
     # define training and validation data loaders
     data_loader_train = DataLoader(
         dataset,
-        batch_size=16,
+        batch_size=4,  # Reduced from 16
         shuffle=True,
-        num_workers=4,
+        num_workers=2,  # Reduced from 4
         collate_fn=collate_fn
     )
 
     data_loader_valid = DataLoader(
         dataset_valid,
-        batch_size=16,
+        batch_size=2,  # Reduced from 16
         shuffle=False,
-        num_workers=4,
+        num_workers=2,
         collate_fn=collate_fn
     )
 
     # get the model using our helper function
     model = get_model_instance_segmentation(num_classes)
-
-    # model.load_state_dict(torch.load("models/RCNN/Tau/rcnn_tau_4.pth"))
-
-    # move model to the right device
     model.to(device)
 
     # construct an optimizer
@@ -260,7 +248,7 @@ if __name__ == "__main__":
         gamma=0.1
     )
 
-    # save the state dict of the model with the lowest loss on the validation step throughout training
+    # save the state dict of the model with the lowest loss on the validation step
     best_valid_loss = float('inf')
     best_model_state_dict = None
 
@@ -270,9 +258,9 @@ if __name__ == "__main__":
 
     for epoch in range(num_epochs):
         print(f"\nEPOCH {epoch + 1} of {num_epochs}")
+        
         # train for one epoch
-        train_loss = train_one_epoch(
-            model, optimizer, data_loader_train, device=device)
+        train_loss = train_one_epoch(model, optimizer, data_loader_train, device=device)
         print(f"Training loss: {train_loss}")
         train_losses.append(train_loss)
 
@@ -280,9 +268,7 @@ if __name__ == "__main__":
         lr_scheduler.step()
 
         # save the model
-        # get a file path not already in use that also uses the filename
         model_path = get_unused_filename(OUT_MODEL_DIR, model_name, ".pth")
-
         torch.save(model.state_dict(), model_path)
 
         # evaluate on the validation dataset
@@ -294,10 +280,6 @@ if __name__ == "__main__":
             best_valid_loss = valid_loss
             best_model_state_dict = model.state_dict()
 
-    # after all epochs have been completed, save the model with the best performance
-    model_name = "best_model"
-
-    # get a file path not already in use that also uses the filename
-    model_path = get_unused_filename(OUT_MODEL_DIR, model_name, ".pth")
-
+    # after all epochs, save the model with the best performance
+    model_path = get_unused_filename(OUT_MODEL_DIR, "best_model", ".pth")
     torch.save(best_model_state_dict, model_path)
