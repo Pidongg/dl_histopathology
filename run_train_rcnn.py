@@ -32,7 +32,8 @@ def get_unused_filename(out_dir, filename, extension):
         path_to_use = f"{out_dir}/{filename}{extension}"
     else:
         last_used_path = matching_paths[-1]
-        last_used_filename = os.path.splitext(os.path.basename(last_used_path))[0]
+        last_used_filename = os.path.splitext(
+            os.path.basename(last_used_path))[0]
         if last_used_filename == filename:
             path_to_use = f"{out_dir}/{filename}_0{extension}"
         else:
@@ -69,7 +70,8 @@ def get_valid_transform():
 
 def get_model_instance_segmentation(num_classes):
     # load an instance segmentation model pre-trained on COCO
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(weights="DEFAULT")
+    model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(
+        weights="DEFAULT")
 
     # get number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
@@ -127,7 +129,8 @@ def validate(model, data_loader, device):
             optimizer.zero_grad()
 
             images = list(image.to(device) for image in images)
-            targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+            targets = [{k: v.to(device) for k, v in t.items()}
+                       for t in targets]
 
             loss_dict = model(images, targets)
             losses = sum(loss for loss in loss_dict.values())
@@ -164,7 +167,8 @@ if __name__ == "__main__":
     num_epochs = args.num_epochs
 
     # train on the GPU or on the CPU, if a GPU is not available
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    device = torch.device(
+        'cuda') if torch.cuda.is_available() else torch.device('cpu')
 
     print("using device: ", device)
 
@@ -210,6 +214,10 @@ if __name__ == "__main__":
                                 height=512,
                                 transforms=get_train_transform(),
                                 device=device)
+    
+    print(f"\nDataset information:")
+    print(f"Training dataset size: {len(dataset)}")
+    print(f"Validation dataset size: {len(dataset_valid)}")
 
     # define training and validation data loaders
     data_loader_train = DataLoader(
@@ -263,7 +271,8 @@ if __name__ == "__main__":
     for epoch in range(num_epochs):
         print(f"\nEPOCH {epoch + 1} of {num_epochs}")
         # train for one epoch
-        train_loss = train_one_epoch(model, optimizer, data_loader_train, device=device)
+        train_loss = train_one_epoch(
+            model, optimizer, data_loader_train, device=device)
         print(f"Training loss: {train_loss}")
         train_losses.append(train_loss)
 
