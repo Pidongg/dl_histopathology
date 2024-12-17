@@ -10,7 +10,6 @@ from . import image_labelling, data_utils
 
 from torchvision.transforms import v2 as T
 
-
 class RCNNDataset(torch.utils.data.Dataset):
     def __init__(self, img_dir, label_dir, width, height, device, transforms=None):
         self.transforms = transforms
@@ -20,15 +19,26 @@ class RCNNDataset(torch.utils.data.Dataset):
         self.width = width
         self.device = device
 
-        # get all the image paths in sorted order
-        self.image_paths = data_utils.list_files_of_a_type(img_dir, ".png")
-        self.all_images = [os.path.basename(image_path) for image_path in self.image_paths]
-        self.all_images = sorted(self.all_images)
+        # get all the image paths recursively
+        self.image_paths = []
+        for root, _, files in os.walk(img_dir):
+            for file in files:
+                if file.endswith('.png'):
+                    self.image_paths.append(os.path.join(root, file))
+        
+        # Sort for consistency
+        self.image_paths = sorted(self.image_paths)
+        
+        # Get relative paths for matching with labels
+        self.all_images = [os.path.relpath(path, img_dir) for path in self.image_paths]
 
     def __getitem__(self, idx):
-        # capture the image name and the full image path
-        image_name = os.path.splitext(self.all_images[idx])[0]
-        image_path = os.path.join(self.img_dir, image_name + '.png')
+        # get the image path
+        image_path = self.image_paths[idx]
+        
+        # get the relative path for matching with label
+        rel_path = self.all_images[idx]
+        image_name = os.path.splitext(rel_path)[0]
 
         # read the image
         image = cv2.imread(image_path)
@@ -37,11 +47,13 @@ class RCNNDataset(torch.utils.data.Dataset):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
         image /= 255.0  # scale colour channels to 0-1
 
-        # get the image's label file, which has the same name
+        # get the corresponding label path
         label_path = os.path.join(self.label_dir, image_name + ".txt")
+        
+        # Create parent directories if they don't exist
+        os.makedirs(os.path.dirname(label_path), exist_ok=True)
 
         # box coordinates and labels are extracted from the corresponding yolo file
-        # output_dir is empty since no labels will be written out
         boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
         labels = torch.Tensor(labels).to(self.device)
 
@@ -70,12 +82,11 @@ class RCNNDataset(torch.utils.data.Dataset):
         if self.transforms:
             try:
                 sample = self.transforms(image=image,
-                                         bboxes=target['boxes'].cpu(),  # since this gets converted to numpy
-                                         labels=labels.cpu())
+                                      bboxes=target['boxes'].cpu(),
+                                      labels=labels.cpu())
                 image = sample['image']
                 target['boxes'] = torch.Tensor(sample['bboxes'])
             except ValueError as e:
-                # continue without applying any transforms - limited precision sometimes causes problems
                 print(e)
                 print("Continuing without applying transforms")
 
@@ -88,4 +99,4 @@ class RCNNDataset(torch.utils.data.Dataset):
         return image, target
 
     def __len__(self):
-        return len(self.all_images)
+        return len(self.image_paths)
