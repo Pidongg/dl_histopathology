@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 
 from . import image_labelling, data_utils
+from torchvision.transforms import v2 as T
 
 class RCNNDataset(torch.utils.data.Dataset):
     def __init__(self, img_dir, label_dir, width, height, device, transforms=None):
@@ -57,29 +58,20 @@ class RCNNDataset(torch.utils.data.Dataset):
 
         try:
             # box coordinates and labels are extracted from the corresponding yolo file
-            boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, 
-                                                                   width=self.width, 
-                                                                   height=self.height, 
-                                                                   normalised=False)
-            
-            # Convert to numpy arrays if they're tensors
-            if isinstance(boxes, torch.Tensor):
-                boxes = boxes.cpu().numpy()
-            if isinstance(labels, torch.Tensor):
-                labels = labels.cpu().numpy()
-            
-            # Ensure we have numpy arrays
-            boxes = np.array(boxes)
-            labels = np.array(labels)
-            
-            # Convert labels to integers
-            labels = labels.astype(int)
+            boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
+            labels = torch.Tensor(labels).to(self.device)
+
+            # increment the labels since 0 is reserved for the background class
+            labels += 1
 
             # area of the bounding boxes
             area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
 
             # no crowd instances
             iscrowd = torch.zeros((boxes.shape[0],), dtype=torch.int64)
+
+            # labels to tensor
+            labels = torch.as_tensor(labels, dtype=torch.int64)
 
             # prepare the final `target` dictionary
             target = {
@@ -94,14 +86,19 @@ class RCNNDataset(torch.utils.data.Dataset):
             if self.transforms:
                 try:
                     sample = self.transforms(image=image,
-                                          bboxes=target['boxes'],
-                                          labels=target['labels'])
+                                          bboxes=target['boxes'].cpu(),
+                                          labels=labels.cpu())
                     image = sample['image']
                     target['boxes'] = torch.Tensor(sample['bboxes'])
-                    target['labels'] = torch.tensor(sample['labels'])
                 except ValueError as e:
                     print(f"Transform error for {image_path}: {e}")
                     print("Continuing without transforms")
+                    
+                    transforms = []
+                    transforms.append(T.ToDtype(torch.float, scale=True))
+                    transforms.append(T.ToPureTensor())
+                    transforms = T.Compose(transforms)
+                    image = transforms(image)
 
             # Move everything to device and ensure correct types
             target['boxes'] = torch.as_tensor(target['boxes'], dtype=torch.float32).to(self.device)
