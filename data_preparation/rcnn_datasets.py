@@ -55,19 +55,16 @@ class RCNNDataset(torch.utils.data.Dataset):
 
         # box coordinates and labels are extracted from the corresponding yolo file
         boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
-        labels = torch.Tensor(labels).to(self.device)
-
-        # increment the labels since 0 is reserved for the background class.
-        labels += 1
+        
+        # Convert to CPU numpy for transforms
+        boxes = boxes.cpu().numpy()
+        labels = labels.cpu().numpy().astype(int)
 
         # area of the bounding boxes
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
 
         # no crowd instances
         iscrowd = torch.zeros((boxes.shape[0],), dtype=torch.int64)
-
-        # labels to tensor
-        labels = torch.as_tensor(labels, dtype=torch.int64)
 
         # prepare the final `target` dictionary
         target = {
@@ -82,10 +79,11 @@ class RCNNDataset(torch.utils.data.Dataset):
         if self.transforms:
             try:
                 sample = self.transforms(image=image,
-                                      bboxes=target['boxes'].cpu(),
-                                      labels=labels.cpu())
+                                      bboxes=target['boxes'],
+                                      labels=target['labels'])
                 image = sample['image']
                 target['boxes'] = torch.Tensor(sample['bboxes'])
+                target['labels'] = torch.tensor(sample['labels'])
             except ValueError as e:
                 print(e)
                 print("Continuing without applying transforms")
@@ -95,6 +93,13 @@ class RCNNDataset(torch.utils.data.Dataset):
                 transforms.append(T.ToPureTensor())
                 transforms = T.Compose(transforms)
                 image = transforms(image)
+
+        # Move everything to device and ensure correct types
+        target['boxes'] = torch.as_tensor(target['boxes'], dtype=torch.float32).to(self.device)
+        target['labels'] = torch.as_tensor(target['labels'], dtype=torch.int64).to(self.device)
+        target['area'] = torch.as_tensor(target['area'], dtype=torch.float32).to(self.device)
+        target['iscrowd'] = target['iscrowd'].to(self.device)
+        target['image_id'] = target['image_id'].to(self.device)
 
         return image, target
 
