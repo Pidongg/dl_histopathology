@@ -1,4 +1,4 @@
-path: "/local/scratch/pz286/dl_histopathology"
+path: "/local/scratch/pz286"
 train: "images/train"
 val: "images/validation"
 train_labels: "labels/train"
