@@ -34,54 +34,49 @@ class RCNNDataset(torch.utils.data.Dataset):
         print(f"Found {len(self.image_paths)} images in {img_dir}")
 
     def __getitem__(self, idx):
-        # get the image path
-        image_path = self.image_paths[idx]
-        
-        # get the relative path for matching with label
-        rel_path = self.all_images[idx]
-        image_name = os.path.splitext(rel_path)[0]
-
-        # read the image
-        image = cv2.imread(image_path)
-        if image is None:
-            raise ValueError(f"Could not read image at {image_path}")
-
-        # convert BGR to RGB color format
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
-        image /= 255.0  # scale colour channels to 0-1
-
-        # get the corresponding label path
-        label_path = os.path.join(self.label_dir, image_name + ".txt")
-        
-        # Create parent directories if they don't exist
-        os.makedirs(os.path.dirname(label_path), exist_ok=True)
-
         try:
+            # get the image path
+            image_path = self.image_paths[idx]
+            
+            # get the relative path for matching with label
+            rel_path = self.all_images[idx]
+            image_name = os.path.splitext(rel_path)[0]
+
+            # read the image
+            image = cv2.imread(image_path)
+            if image is None:
+                raise ValueError(f"Could not read image at {image_path}")
+
+            # convert BGR to RGB color format
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB).astype(np.float32)
+            image /= 255.0  # scale colour channels to 0-1
+
+            # get the corresponding label path
+            label_path = os.path.join(self.label_dir, image_name + ".txt")
+            
+            # Create parent directories if they don't exist
+            os.makedirs(os.path.dirname(label_path), exist_ok=True)
+
             # box coordinates and labels are extracted from the corresponding yolo file
             boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
             
-            # Convert to numpy arrays for transforms
-            if isinstance(boxes, torch.Tensor):
-                boxes = boxes.cpu().numpy()
-            if isinstance(labels, torch.Tensor):
-                labels = labels.cpu().numpy()
-            
-            # Convert to int type for labels
-            labels = labels.astype(int)
+            # Convert to numpy arrays
+            boxes = np.array(boxes)
+            labels = np.array(labels, dtype=int)
 
             # apply the image transforms BEFORE incrementing labels
             if self.transforms:
                 try:
                     sample = self.transforms(image=image,
-                                      bboxes=boxes,
-                                      labels=labels)
+                                          bboxes=boxes,
+                                          labels=labels)
                     image = sample['image']
                     boxes = torch.Tensor(sample['bboxes'])
                     labels = torch.tensor(sample['labels'])
                 except ValueError as e:
                     print(f"Transform error for {image_path}: {e}")
                     print("Continuing without transforms")
-                
+                    
                     transforms = []
                     transforms.append(T.ToDtype(torch.float, scale=True))
                     transforms.append(T.ToPureTensor())
