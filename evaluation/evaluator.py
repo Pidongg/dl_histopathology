@@ -36,11 +36,21 @@ class Evaluator:
         pass
 
     def get_labels_for_image(self, img_path):
+        """ Get the filename of a file without the extension. """
         filename = data_utils.get_filename(img_path)
-        label_path = os.path.join(os.path.dirname(self.test_labels[0]), filename + ".txt")
+        
+        # Get the subdirectory structure from the image path
+        img_subdir = os.path.dirname(img_path)
+        base_img_dir = os.path.dirname(os.path.commonprefix(self.test_imgs))
+        relative_path = os.path.relpath(img_subdir, base_img_dir)
+        
+        # Construct the corresponding label path
+        base_label_dir = os.path.dirname(os.path.commonprefix(self.test_labels))
+        label_subdir = os.path.join(base_label_dir, relative_path)
+        label_path = os.path.join(label_subdir, filename + ".txt")
 
         if not os.path.exists(label_path):
-            raise Exception(f"Label file for {filename} not found in label directory")
+            raise Exception(f"Label file for {filename} not found at {label_path}")
 
         bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
         labels = torch.as_tensor(labels, dtype=torch.int32)  # convert from list to tensor
