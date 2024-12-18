@@ -15,8 +15,8 @@ def main():
 
     args = parser.parse_args()
 
-    pretrained_model = args.pt
-    cfg = args.cfg
+    pretrained_model = args.pretrained
+    cfg = args.config
 
     # Load a pretrained YOLO model (recommended for training)
     model = YOLO(pretrained_model)
