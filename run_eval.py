@@ -36,11 +36,13 @@ def main():
     prefix = args.name
 
     # check that the test sets are not empty
-    if len(data_utils.list_files_of_a_type(test_images, ".png")) == 0:
+    test_images = data_utils.list_files_of_a_type(test_images, ".png", recursive=True)  # Add recursive=True
+    if len(test_images) == 0:
         print("No images found in provided test set")
         return
 
-    if len(data_utils.list_files_of_a_type(test_labels, ".txt")) == 0:
+    test_labels = data_utils.list_files_of_a_type(test_labels, ".txt", recursive=True)  # Add recursive=True
+    if len(test_labels) == 0:
         print("No labels found in provided test set")
         return
 

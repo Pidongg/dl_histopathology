@@ -5,18 +5,25 @@ import numpy as np
 import torchvision.transforms.functional as F
 
 
-def list_files_of_a_type(directory: os.path, file_extension: str) -> list[os.path]:
+def list_files_of_a_type(directory, extension, recursive=False):
     """
-    Lists all files with a specified file extension found in a directory.
-
+    Lists all files with the given extension in the directory
+    
     Args:
-        directory (path): Path to the directory to look into.
-        file_extension (str): e.g. ".png", ".jpg"
-
-    Returns:
-        (list[path]) A list of files with the given extension inside the directory.
+        directory: Path to search
+        extension: File extension to look for (e.g., ".png")
+        recursive: If True, search subdirectories as well
     """
-    return glob.glob(f"{directory}/*{file_extension}")
+    if recursive:
+        files = []
+        for root, _, filenames in os.walk(directory):
+            for filename in filenames:
+                if filename.endswith(extension):
+                    files.append(os.path.join(root, filename))
+        return sorted(files)
+    else:
+        return sorted([os.path.join(directory, f) for f in os.listdir(directory) 
+                      if f.endswith(extension)])
 
 
 def get_filename(file_path):
