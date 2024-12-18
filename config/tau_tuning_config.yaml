@@ -1,4 +1,4 @@
-data: "./tau_data.yaml"
+data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
 epochs: 10
 iterations: 100
 optimizer: 'AdamW'
