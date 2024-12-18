@@ -5,6 +5,7 @@ from data_preparation import data_utils
 import argparse
 import yaml
 import run_train_rcnn
+import os
 
 
 def main():
@@ -35,13 +36,15 @@ def main():
     test_labels = args.test_set_labels
     prefix = args.name
 
+    # Get list of all test images and labels
+    test_images = data_utils.list_files_of_a_type(test_images, ".png", recursive=True)
+    test_labels = data_utils.list_files_of_a_type(test_labels, ".txt", recursive=True)
+
     # check that the test sets are not empty
-    test_images = data_utils.list_files_of_a_type(test_images, ".png", recursive=True)  # Add recursive=True
     if len(test_images) == 0:
         print("No images found in provided test set")
         return
 
-    test_labels = data_utils.list_files_of_a_type(test_labels, ".txt", recursive=True)  # Add recursive=True
     if len(test_labels) == 0:
         print("No labels found in provided test set")
         return
@@ -69,6 +72,10 @@ def main():
                             "of class indices to names.")
 
         class_dict = cfg_dict['names']
+
+    # Create save directory if it doesn't exist
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
 
     # run inference with the provided model
     if args.yolo:

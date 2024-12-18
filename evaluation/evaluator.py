@@ -7,14 +7,16 @@ from abc import ABC, abstractmethod
 from torchvision.io import read_image
 
 
-class Evaluator(ABC):
+class Evaluator:
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir):
         self.model = model
-        self.test_imgs = test_imgs  # path to the directory holding the test/valid set images
-        self.test_labels = test_labels  # path to the directory holding the test/valid set labels
+        # If test_imgs/test_labels are already lists of files, use them directly
+        self.test_imgs = (test_imgs if isinstance(test_imgs, list) 
+                         else data_utils.list_files_of_a_type(test_imgs, ".png", recursive=True))
+        self.test_labels = (test_labels if isinstance(test_labels, list) 
+                          else data_utils.list_files_of_a_type(test_labels, ".txt", recursive=True))
         self.device = device
         self.class_dict = class_dict
-        self.num_classes = len(class_dict.keys())
         self.save_dir = save_dir
 
         self.preds = []  # list of tensors, each tensor holding the predictions for one image
@@ -23,10 +25,10 @@ class Evaluator(ABC):
         self.__get_preds_and_labels()
 
         self.metrics = ObjectDetectionMetrics(save_dir=self.save_dir,
-                                              idx_to_name=self.class_dict,
-                                              detections=self.preds,
-                                              ground_truths=self.gt,
-                                              device=self.device)
+                                            idx_to_name=self.class_dict,
+                                            detections=self.preds,
+                                            ground_truths=self.gt,
+                                            device=self.device)
 
     @abstractmethod
     def infer_for_one_img(self, img_path):
@@ -35,7 +37,7 @@ class Evaluator(ABC):
 
     def get_labels_for_image(self, img_path):
         filename = data_utils.get_filename(img_path)
-        label_path = os.path.join(self.test_labels, filename + ".txt")
+        label_path = os.path.join(os.path.dirname(self.test_labels[0]), filename + ".txt")
 
         if not os.path.exists(label_path):
             raise Exception(f"Label file for {filename} not found in label directory")
@@ -57,11 +59,9 @@ class Evaluator(ABC):
         self.preds = []
         self.gt = []
 
-        img_paths = data_utils.list_files_of_a_type(self.test_imgs, ".png")
-
         print("Running inference on test set...")
-        for i in tqdm.tqdm(range(len(img_paths))):
-            img_path = img_paths[i]
+        for i in tqdm.tqdm(range(len(self.test_imgs))):
+            img_path = self.test_imgs[i]
             ground_truths, predictions = self.infer_for_one_img(img_path)
 
             self.preds.append(predictions)
