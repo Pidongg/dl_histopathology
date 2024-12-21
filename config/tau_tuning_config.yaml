@@ -1,6 +1,6 @@
 data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
-epochs: 10
-iterations: 100
+epochs: 25  # Increase to get better convergence
+iterations: 40  # Decrease to maintain reasonable total computation time
 optimizer: 'AdamW'
 plots: False
 save: False

@@ -1,0 +1,29 @@
+data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
+epochs: 200
+optimizer: 'AdamW'
+plots: True
+val: True
+patience: 40 # increased from 20 to 40, to account for plateau period
+save_period: 20
+weight_decay: 0.0001
+
+lr0: 0.001
+lrf: 0.01
+
+hsv_h: 0
+hsv_s: 0
+hsv_v: 0
+perspective: 0.0
+bgr: 0.0
+mosaic: 0
+mixup: 0.0
+erasing: 0
+
+degrees: 0
+translate: 0
+scale: 0
+shear: 0
+flipud: 0
+fliplr: 0
+copy_paste: 'flip'
+crop_fraction: 0.875
