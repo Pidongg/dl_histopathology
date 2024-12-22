@@ -35,14 +35,12 @@ def main():
     # Add debug callback to check image sizes
     def log_batch_stats(trainer):
         try:
-            # Log at the start of training
-            imgs = trainer.batch[0]
-            LOGGER.info(f"Batch image shape: {imgs.shape}")
-            LOGGER.info(f"Model args: {trainer.args}")
-            if hasattr(trainer.args, 'crop_fraction'):
-                LOGGER.info(f"Actual crop_fraction: {trainer.args.crop_fraction}")
+            # Log training configuration
+            LOGGER.info(f"Training args: {trainer.args}")
+            LOGGER.info(f"Data args: {trainer.data}")
             
-            # Try to access other relevant attributes
+            # Try to access model parameters
+            LOGGER.info(f"Image size: {trainer.args.imgsz}")
             LOGGER.info(f"Batch size: {trainer.batch_size}")
             LOGGER.info(f"Device: {trainer.device}")
             
@@ -50,7 +48,7 @@ def main():
             LOGGER.info(f"Debug info error: {str(e)}")
             
     # Add the callback to model
-    model.add_callback("on_train_start", log_batch_stats)  # Changed to on_train_start
+    model.add_callback("on_train_start", log_batch_stats)
 
     # train models
     model.train(**cfg_args)
