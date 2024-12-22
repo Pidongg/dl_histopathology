@@ -2,7 +2,7 @@ from ultralytics import YOLO
 import yaml
 import argparse
 import torch
-from ultralytics.yolo.utils import LOGGER
+from ultralytics.utils import LOGGER
 
 def main():
     parser = argparse.ArgumentParser()
