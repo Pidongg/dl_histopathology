@@ -34,11 +34,12 @@ def main():
 
     # Add debug callback to check image sizes
     def log_batch_stats(trainer):
-        if trainer.epoch == 0 and trainer.batch == 0:
-            batch = trainer.batch_idx
+        if trainer.epoch == 0 and trainer.batch_idx == 0:  # Changed from batch to batch_idx
             imgs = trainer.batch[0]
             LOGGER.info(f"First batch image shape: {imgs.shape}")
             LOGGER.info(f"Model args: {trainer.args}")
+            if hasattr(trainer.args, 'crop_fraction'):
+                LOGGER.info(f"Actual crop_fraction: {trainer.args.crop_fraction}")
             
     # Add the callback to model
     model.add_callback("on_train_batch_start", log_batch_stats)
