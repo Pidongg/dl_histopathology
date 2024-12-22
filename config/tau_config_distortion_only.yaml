@@ -26,3 +26,4 @@ fliplr: 0
 scale: 0.5
 shear: 5.0
 crop_fraction: 0
+auto_augment: False

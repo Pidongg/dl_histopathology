@@ -25,5 +25,7 @@ scale: 0
 shear: 0
 flipud: 0
 fliplr: 0
-copy_paste: 'flip'
-crop_fraction: 0.875
+copy_paste: 1.0
+copy_paste_mode: 'flip'
+crop_fraction: 1.0
+auto_augment: False

@@ -27,13 +27,4 @@ copy_paste: 0
 erasing: 0
 crop_fraction: 0
 
-# Disable RandAugment
 auto_augment: False
-
-# Custom augmentation settings
-augment: True
-custom_augment: True
-clahe_params:
-  p: 0.5               # 50% chance of applying CLAHE
-  clip_limit: 1.0      # Conservative clip limit
-  tile_grid_size: 8    # Grid size for local regions
