@@ -41,7 +41,6 @@ def main():
             
             # Try to access model parameters
             LOGGER.info(f"Image size: {trainer.args.imgsz}")
-            LOGGER.info(f"Batch size: {trainer.batch_size}")
             LOGGER.info(f"Device: {trainer.device}")
             
         except Exception as e:
