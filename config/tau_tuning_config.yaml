@@ -1,31 +1,27 @@
 data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
-epochs: 25  # Increase to get better convergence
-iterations: 40  # Decrease to maintain reasonable total computation time
+epochs: 75  # Increase to get better convergence
+iterations: 100  # Decrease to maintain reasonable total computation time
 optimizer: 'AdamW'
-plots: False
-save: False
-val: False
+plots: True
+save: True
+val: True
 
-lr0: 0.00804
-lrf: 0.01076
-momentum: 0.93767
-weight_decay: 0.00066
-warmup_epochs: 3.44199
-warmup_momentum: 0.95
-box: 6.85345
-cls: 0.4956
-dfl: 1.43904
-hsv_h: 0.01308
-hsv_s: 0.39951
-hsv_v: 0.31747
-degrees: 45.0
-translate: 0.09613
-scale: 0.417
-shear: 0.0
+lr0: 0.001
+lrf: 0.01
+
+hsv_h: 0
+hsv_s: 0
+hsv_v: 0
 perspective: 0.0
-flipud: 0.5
-fliplr: 0.48401
 bgr: 0.0
-mosaic: 1.0
+mosaic: 0
 mixup: 0.0
-copy_paste: 0.0
+erasing: 0
+
+degrees: 15
+translate: 0.1
+flipud: 0.42503
+fliplr: 0.66767
+scale: 0.5
+shear: 5.0
+auto_augment: False
