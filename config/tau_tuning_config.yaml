@@ -1,27 +1,32 @@
 data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
-epochs: 75  # Increase to get better convergence
-iterations: 100  # Decrease to maintain reasonable total computation time
-optimizer: 'AdamW'
-plots: True
-save: True
-val: True
+epochs: 30
+iterations: 50
+optimizer: AdamW
+plots: true
+save: true
+val: true
 
-lr0: 0.001
-lrf: 0.01
+# Define search spaces for learning rates and selected augmentations
+space:
+  # Learning rates
+  lr0: [0.0001, 0.01]      # Initial learning rate
+  lrf: [0.01, 1.0]         # Final learning rate factor
+  
+  # Geometric augmentations
+  degrees: [0.0, 45.0]     # Rotation range (current: 15)
+  translate: [0.0, 0.3]    # Translation range (current: 0.1)
+  scale: [0.1, 0.9]        # Scale range (current: 0.5)
+  shear: [0.0, 10.0]       # Shear range (current: 5.0)
+  flipud: [0.0, 1.0]       # Vertical flip probability (current: 0.42503)
+  fliplr: [0.0, 1.0]       # Horizontal flip probability (current: 0.66767)
 
-hsv_h: 0
-hsv_s: 0
-hsv_v: 0
+# Fixed parameters
+hsv_h: 0.0
+hsv_s: 0.0
+hsv_v: 0.0
 perspective: 0.0
 bgr: 0.0
-mosaic: 0
+mosaic: 0.0
 mixup: 0.0
-erasing: 0
-
-degrees: 15
-translate: 0.1
-flipud: 0.42503
-fliplr: 0.66767
-scale: 0.5
-shear: 5.0
-auto_augment: False
+erasing: 0.0
+auto_augment: false
