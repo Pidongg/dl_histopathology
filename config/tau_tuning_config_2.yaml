@@ -9,14 +9,23 @@ cache: true
 batch: -1
 fraction: 0.3    # Use subset of data for faster tuning
 
+# space:
+#   # Geometric transformations
+#   shear: [0.0, 2.5, 5.0, 7.5, 10.0]      # 5 values with 2.5 step
+#   degrees: [5.0, 15.0, 25.0, 35.0, 45.0]  # 5 values with 10° step
+#   flipud: [0.2, 0.4, 0.6, 0.8]            # 4 values with 0.2 step
+#   scale: [0.2, 0.4, 0.6, 0.8]             # 4 values with 0.2 step
+#   translate: [0.05, 0.1, 0.15, 0.2]       # 4 values with 0.05 step
+#   fliplr: [0.2, 0.4, 0.6, 0.8]            # 4 values with 0.2 step
+
 space:
-  # Geometric transformations
-  shear: [0.0, 2.5, 5.0, 7.5, 10.0]      # 5 values with 2.5 step
-  degrees: [5.0, 15.0, 25.0, 35.0, 45.0]  # 5 values with 10° step
-  flipud: [0.2, 0.4, 0.6, 0.8]            # 4 values with 0.2 step
-  scale: [0.2, 0.4, 0.6, 0.8]             # 4 values with 0.2 step
-  translate: [0.05, 0.1, 0.15, 0.2]       # 4 values with 0.05 step
-  fliplr: [0.2, 0.4, 0.6, 0.8]            # 4 values with 0.2 step
+  # More focused ranges based on best results
+  shear: [0.0, 1.0, 2.0, 3.0]           # Since 0.0 was best
+  degrees: [5.0, 7.5, 10.0, 12.5]       # Centered around 5.14
+  flipud: [0.2, 0.3, 0.4, 0.5]          # Centered around 0.2
+  scale: [0.3, 0.4, 0.5, 0.6]           # Centered around 0.4
+  translate: [0.05, 0.1, 0.15]          # Centered around 0.1
+  fliplr: [0.3, 0.4, 0.5, 0.6]          # Centered around 0.4
 
 # Fixed parameters
 lr0: 0.0095
