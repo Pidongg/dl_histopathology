@@ -4,8 +4,9 @@ iterations: 10
 optimizer: AdamW
 plots: true
 save: false
-val: true
-cache: false
+val: false
+cache: true 
+batch: -1
 fraction: 0.3    # Use subset of data for faster tuning
 
 space:
