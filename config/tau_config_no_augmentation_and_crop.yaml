@@ -4,8 +4,11 @@ optimizer: 'AdamW'
 plots: True
 val: True
 patience: 40 # increased from 20 to 40, to account for plateau period
-save_period: 20
 weight_decay: 0.0001
+momentum: 0.937
+warmup_epochs: 3
+warmup_momentum: 0.8
+warmup_bias_lr: 0.1
 
 # hyperparameters saved from the best performance obtained throughout tuning for 100 iterations of 10 epochs each
 lr0: 0.001

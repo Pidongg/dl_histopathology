@@ -1,19 +1,25 @@
 data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
-epochs: 30
+epochs: 10
 iterations: 10
 optimizer: AdamW
 plots: true
-save: true
+save: false
 val: true
+cache: false
+fraction: 0.3    # Use subset of data for faster tuning
 
 space:
-  # Geometric augmentations
-  degrees: [0.0, 45.0]     # Rotation range (current: 15)
-  flipud: [0.0, 1.0]       # Vertical flip probability (current: 0.42503)
+  # Geometric transformations
+  shear: [0.0, 2.5, 5.0, 7.5, 10.0]      # 5 values with 2.5 step
+  degrees: [5.0, 15.0, 25.0, 35.0, 45.0]  # 5 values with 10° step
+  flipud: [0.2, 0.4, 0.6, 0.8]            # 4 values with 0.2 step
+  scale: [0.2, 0.4, 0.6, 0.8]             # 4 values with 0.2 step
+  translate: [0.05, 0.1, 0.15, 0.2]       # 4 values with 0.05 step
+  fliplr: [0.2, 0.4, 0.6, 0.8]            # 4 values with 0.2 step
 
+# Fixed parameters
 lr0: 0.0095
 lrf: 0.01328
-
 hsv_h: 0
 hsv_s: 0
 hsv_v: 0
@@ -22,11 +28,4 @@ bgr: 0.0
 mosaic: 0
 mixup: 0.0
 erasing: 0
-
-translate: 0.1
-fliplr: 0.5
-
-scale: 0.47339
-shear: 0.0
-crop_fraction: 1.0
 auto_augment: False
