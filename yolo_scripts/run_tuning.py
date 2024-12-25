@@ -5,15 +5,10 @@ import argparse
 
 
 class AggressiveTuner(Tuner):
-    def __init__(self, args):
-        super().__init__(args)
-        self.mutation = 0.9    # Increased from 0.8
-        self.sigma = 0.5       # Increased from 0.2
-        
-    def mutate(self, parent):
-        # Override the mutation method to be more aggressive
-        child = super().mutate(parent)
-        return child
+    def __init__(self, args=None):  # Make args optional
+        super().__init__(args={})    # Initialize with empty dict
+        self.mutation = 0.9    
+        self.sigma = 0.5       
 
 
 def main():
@@ -45,11 +40,15 @@ def main():
             print(exc)
             return
 
-    # Set up aggressive tuner
-    tuner = AggressiveTuner(cfg_args)
-    
-    # Run tuning with aggressive exploration
-    model.tune(tuner=tuner, **cfg_args)
+    # Create tuner with aggressive settings
+    tuner = AggressiveTuner()
+    tuner.mutation = 0.9
+    tuner.sigma = 0.5
+
+    # Run tuning
+    results = model.tune(**cfg_args)  # Pass config directly to tune()
+
+    print(f"Best hyperparameters found: {results}")
 
 
 if __name__ == "__main__":
