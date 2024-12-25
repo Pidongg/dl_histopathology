@@ -1,6 +1,19 @@
 from ultralytics import YOLO
+from ultralytics.engine.tuner import Tuner
 import yaml
 import argparse
+
+
+class AggressiveTuner(Tuner):
+    def __init__(self, args):
+        super().__init__(args)
+        self.mutation = 0.9    # Increased from 0.8
+        self.sigma = 0.5       # Increased from 0.2
+        
+    def mutate(self, parent):
+        # Override the mutation method to be more aggressive
+        child = super().mutate(parent)
+        return child
 
 
 def main():
@@ -18,7 +31,7 @@ def main():
     pretrained_model = args.pretrained
     cfg = args.config
 
-    # Load a pretrained YOLO model (recommended for training)
+    # Load a pretrained YOLO model
     model = YOLO(pretrained_model)
     model.to('cuda')
 
@@ -30,9 +43,13 @@ def main():
             cfg_args = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
             print(exc)
+            return
 
-    # tune hyperparameters
-    model.tune(**cfg_args)
+    # Set up aggressive tuner
+    tuner = AggressiveTuner(cfg_args)
+    
+    # Run tuning with aggressive exploration
+    model.tune(tuner=tuner, **cfg_args)
 
 
 if __name__ == "__main__":
