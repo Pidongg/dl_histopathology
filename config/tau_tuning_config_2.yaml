@@ -9,9 +9,7 @@ val: true
 space:
   # Geometric augmentations
   degrees: [0.0, 45.0]     # Rotation range (current: 15)
-  translate: [0.0, 0.3]    # Translation range (current: 0.1)
   flipud: [0.0, 1.0]       # Vertical flip probability (current: 0.42503)
-  fliplr: [0.0, 1.0]       # Horizontal flip probability (current: 0.66767)
 
 lr0: 0.0095
 lrf: 0.01328
@@ -24,6 +22,9 @@ bgr: 0.0
 mosaic: 0
 mixup: 0.0
 erasing: 0
+
+translate: 0.1
+fliplr: 0.5
 
 scale: 0.47339
 shear: 0.0
