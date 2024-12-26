@@ -41,8 +41,19 @@ def main():
         "flipud": tune.uniform(0.0, 1.0),
         "fliplr": tune.uniform(0.0, 1.0),
     }
-    # tune hyperparameters
-    model.tune(space=search_space, use_ray=True, **cfg_args)
+    try:
+        # Run tuning with valid YOLO arguments
+        result_grid = model.tune(
+            data=cfg_args['data'],
+            space=search_space,
+            use_ray=True,
+            epochs=cfg_args.get('epochs', 10),
+            iterations=cfg_args.get('iterations', 100),
+            **{k: v for k, v in cfg_args.items() if k not in ['data', 'epochs', 'iterations']}
+        )
+        
+    except Exception as e:
+        raise
 
 
 if __name__ == "__main__":
