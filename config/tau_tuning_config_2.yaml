@@ -1,6 +1,6 @@
 data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
 epochs: 10
-iterations: 10
+iterations: 100
 optimizer: AdamW
 plots: true
 save: false
@@ -9,23 +9,35 @@ cache: true
 batch: -1
 fraction: 0.3    # Use subset of data for faster tuning
 
-# space:
-#   # Geometric transformations
-#   shear: [0.0, 2.5, 5.0, 7.5, 10.0]      # 5 values with 2.5 step
-#   degrees: [5.0, 15.0, 25.0, 35.0, 45.0]  # 5 values with 10° step
-#   flipud: [0.2, 0.4, 0.6, 0.8]            # 4 values with 0.2 step
-#   scale: [0.2, 0.4, 0.6, 0.8]             # 4 values with 0.2 step
-#   translate: [0.05, 0.1, 0.15, 0.2]       # 4 values with 0.05 step
-#   fliplr: [0.2, 0.4, 0.6, 0.8]            # 4 values with 0.2 step
-
 space:
-  # More focused ranges based on best results
-  shear: [0.0, 1.0, 2.0, 3.0]           # Since 0.0 was best
-  degrees: [5.0, 7.5, 10.0, 12.5]       # Centered around 5.14
-  flipud: [0.2, 0.3, 0.4, 0.5]          # Centered around 0.2
-  scale: [0.3, 0.4, 0.5, 0.6]           # Centered around 0.4
-  translate: [0.05, 0.1, 0.15]          # Centered around 0.1
-  fliplr: [0.3, 0.4, 0.5, 0.6]          # Centered around 0.4
+  # Learning rates
+  lr0: [0.0001, 0.01]      # Initial learning rate range
+  lrf: [0.01, 1.0]         # Final LR factor range
+  
+  # Geometric augmentations with proper ranges
+  degrees: 
+    min: 0.0
+    max: 180.0
+  
+  shear:
+    min: -180.0
+    max: 180.0
+  
+  translate:
+    min: 0.0
+    max: 1.0
+  
+  scale:
+    min: 0.0
+    max: 1.0
+  
+  flipud:
+    min: 0.0
+    max: 1.0
+  
+  fliplr:
+    min: 0.0
+    max: 1.0
 
 # Fixed parameters
 lr0: 0.0095
