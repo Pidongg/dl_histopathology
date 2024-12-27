@@ -1,3 +1,6 @@
+import torch
+import ray
+import os
 from ultralytics import YOLO
 import yaml
 import argparse
@@ -26,7 +29,16 @@ def main():
 
     print("Device:", model.device.type)
 
-    # get hyperparameters
+
+   # Set CUDA devices to use all available GPUs
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
+
+    # Initialize Ray with GPU resources
+    ray.init(num_gpus=4)  # Adjust based on available GPUs
+
+    # Check CUDA availability
+    if not torch.cuda.is_available():
+        return  # get hyperparameters
     with open(cfg, "r") as stream:
         try:
             cfg_args = yaml.safe_load(stream)
@@ -51,7 +63,7 @@ def main():
             iterations=cfg_args.get('iterations', 100),
             **{k: v for k, v in cfg_args.items() if k not in ['data', 'epochs', 'iterations']}
         )
-        
+
     except Exception as e:
         raise
 
