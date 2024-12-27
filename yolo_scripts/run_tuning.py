@@ -46,12 +46,10 @@ def main():
             print(exc)
 
     search_space = {
-        "degrees": tune.uniform(0.0,45.0),
-        "shear": tune.uniform(0.0,10.0),
-        "translate": tune.uniform(0.0, 0.9),
-        "scale": tune.uniform(0.0, 0.9),
-        "flipud": tune.uniform(0.0, 1.0),
-        "fliplr": tune.uniform(0.0, 1.0),
+        "degrees": tune.uniform(1.5,45.0),
+        "shear": tune.uniform(0.0,3.0),
+        "translate": tune.uniform(0.0, 0.3),
+        "flipud": tune.uniform(0.0, 0.3)
     }
     try:
         # Run tuning with valid YOLO arguments
