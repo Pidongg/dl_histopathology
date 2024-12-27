@@ -92,7 +92,7 @@ def analyze_tune_results(experiment_path):
 
 if __name__ == "__main__":
     # Specify your experiment path
-    EXPERIMENT_PATH = "/tmp/ray_results/tune_analyzing_results"
+    EXPERIMENT_PATH = "/home/pz286/ray_results/train_function_2024-12-26_23-39-11"
     
     # Run analysis
     result_grid, best_result = analyze_tune_results(EXPERIMENT_PATH)
