@@ -1,121 +1,98 @@
 import os
-import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
-from ray.tune import ExperimentAnalysis
-import numpy as np
+import torch
+from ray import tune
+from ray.tune.examples.mnist_pytorch import train_mnist, ConvNet, get_data_loaders
 
-# Set the experiment path
-experiment_path = "/home/pz286/ray_results/train_function_2024-12-26_23-39-11"
-
-# Load the experiment analysis
-analysis = ExperimentAnalysis(experiment_path)
-
-# Get all trials dataframe
-df = analysis.dataframe()
-
-# Print best trial configuration and metrics
-best_trial = analysis.get_best_trial(metric="fitness", mode="min")
-print("\nBest Trial Configuration:")
-print("========================")
-for key, value in best_trial.config.items():
-    if key.startswith('space/'):  # Only print hyperparameters
-        print(f"{key.replace('space/', '')}: {value}")
-
-print("\nBest Trial Metrics:")
-print("=================")
-metrics = best_trial.last_result
-for key in ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 'metrics/mAP50-95(B)', 'val/box_loss', 'val/cls_loss', 'val/dfl_loss']:
-    if key in metrics:
-        print(f"{key}: {metrics[key]:.4f}")
-
-# Create visualizations directory
-os.makedirs("tune_analysis", exist_ok=True)
-
-# Plot hyperparameter distributions
-hyperparams = ['degrees', 'shear', 'translate', 'scale', 'flipud', 'fliplr']
-fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-axes = axes.ravel()
-
-for idx, param in enumerate(hyperparams):
-    param_key = f'space/{param}'
-    if param_key in df.columns:
-        sns.histplot(data=df, x=param_key, ax=axes[idx])
-        axes[idx].set_title(f'Distribution of {param}')
-        axes[idx].set_xlabel(param)
-
-plt.tight_layout()
-plt.savefig('tune_analysis/hyperparameter_distributions.png')
-plt.close()
-
-# Plot correlation matrix of hyperparameters and metrics
-metrics_cols = ['metrics/precision(B)', 'metrics/recall(B)', 'metrics/mAP50(B)', 
-                'metrics/mAP50-95(B)', 'val/box_loss', 'val/cls_loss', 'val/dfl_loss']
-hyperparam_cols = [f'space/{param}' for param in hyperparams]
-
-correlation_cols = hyperparam_cols + metrics_cols
-correlation_df = df[correlation_cols].copy()
-
-# Rename columns for better visualization
-correlation_df.columns = [col.replace('space/', '').replace('metrics/', '').replace('val/', '') 
-                        for col in correlation_df.columns]
-
-plt.figure(figsize=(12, 10))
-sns.heatmap(correlation_df.corr(), annot=True, cmap='coolwarm', center=0)
-plt.title('Correlation Matrix of Hyperparameters and Metrics')
-plt.tight_layout()
-plt.savefig('tune_analysis/correlation_matrix.png')
-plt.close()
-
-# Plot parallel coordinates plot for top trials
-top_n = 10  # Number of top trials to visualize
-metrics_to_optimize = 'metrics/mAP50(B)'  # Change this to your target metric
-
-# Get the top N trials based on the metric
-top_trials = df.nlargest(top_n, metrics_to_optimize)
-
-# Prepare data for parallel coordinates plot
-parallel_plot_data = top_trials[hyperparam_cols + [metrics_to_optimize]].copy()
-parallel_plot_data.columns = [col.replace('space/', '') for col in parallel_plot_data.columns]
-
-# Normalize the data for better visualization
-normalized_data = (parallel_plot_data - parallel_plot_data.min()) / (parallel_plot_data.max() - parallel_plot_data.min())
-
-plt.figure(figsize=(15, 8))
-pd.plotting.parallel_coordinates(normalized_data, metrics_to_optimize.replace('metrics/', ''))
-plt.title(f'Parallel Coordinates Plot of Top {top_n} Trials')
-plt.xticks(rotation=45)
-plt.tight_layout()
-plt.savefig('tune_analysis/parallel_coordinates.png')
-plt.close()
-
-# Save summary statistics to a text file
-with open('tune_analysis/summary_statistics.txt', 'w') as f:
-    f.write("Summary Statistics\n")
-    f.write("==================\n\n")
+def analyze_tune_results(experiment_path):
+    """Analyze Ray Tune experiment results"""
+    print(f"Loading results from {experiment_path}...")
     
-    f.write("Hyperparameter Ranges:\n")
-    for param in hyperparams:
-        param_key = f'space/{param}'
-        if param_key in df.columns:
-            f.write(f"{param}:\n")
-            f.write(f"  Min: {df[param_key].min():.4f}\n")
-            f.write(f"  Max: {df[param_key].max():.4f}\n")
-            f.write(f"  Mean: {df[param_key].mean():.4f}\n")
-            f.write(f"  Std: {df[param_key].std():.4f}\n\n")
-    
-    f.write("\nMetrics Statistics:\n")
-    for metric in metrics_cols:
-        if metric in df.columns:
-            f.write(f"{metric}:\n")
-            f.write(f"  Min: {df[metric].min():.4f}\n")
-            f.write(f"  Max: {df[metric].max():.4f}\n")
-            f.write(f"  Mean: {df[metric].mean():.4f}\n")
-            f.write(f"  Std: {df[metric].std():.4f}\n\n")
+    # 1. Restore results
+    restored_tuner = tune.Tuner.restore(experiment_path, trainable=train_mnist)
+    result_grid = restored_tuner.get_results()
 
-print("\nAnalysis complete! Results saved in the 'tune_analysis' directory.")
-print("Generated files:")
-print("- hyperparameter_distributions.png")
-print("- correlation_matrix.png")
-print("- parallel_coordinates.png")
-print("- summary_statistics.txt")
+    # 2. Check for errors
+    if result_grid.errors:
+        print("One of the trials failed!")
+        for i, result in enumerate(result_grid):
+            if result.error:
+                print(f"Trial #{i} had an error:", result.error)
+        return
+    else:
+        print("No errors!")
+
+    # 3. Basic experiment stats
+    num_results = len(result_grid)
+    print(f"\nNumber of trials: {num_results}")
+
+    # 4. Get trial metrics
+    results_df = result_grid.get_dataframe()
+    print("\nTraining times:")
+    print("Shortest training time:", results_df["time_total_s"].min())
+    print("Longest training time:", results_df["time_total_s"].max())
+
+    # 5. Get best results
+    best_result_df = result_grid.get_dataframe(
+        filter_metric="mean_accuracy", 
+        filter_mode="max"
+    )
+    print("\nBest results per trial:")
+    print(best_result_df[["training_iteration", "mean_accuracy"]])
+
+    # 6. Analyze best performing trial
+    best_result = result_grid.get_best_result()
+    print("\nBest trial config:", best_result.config)
+    print("Best trial final accuracy:", best_result.metrics["mean_accuracy"])
+    print("Best trial path:", best_result.path)
+
+    # 7. Plot learning curves
+    plt.figure(figsize=(10, 5))
+    ax = None
+    for result in result_grid:
+        label = f"lr={result.config['lr']:.3f}, momentum={result.config['momentum']}"
+        if ax is None:
+            ax = result.metrics_dataframe.plot(
+                "training_iteration", 
+                "mean_accuracy", 
+                label=label
+            )
+        else:
+            result.metrics_dataframe.plot(
+                "training_iteration", 
+                "mean_accuracy", 
+                ax=ax, 
+                label=label
+            )
+    ax.set_title("Mean Accuracy vs. Training Iteration for All Trials")
+    ax.set_ylabel("Mean Test Accuracy")
+    plt.tight_layout()
+    plt.show()
+
+    # 8. Load best model and test inference
+    model = ConvNet()
+    with best_result.checkpoint.as_directory() as checkpoint_dir:
+        model.load_state_dict(
+            torch.load(os.path.join(checkpoint_dir, "model.pt"))
+        )
+
+    # Test inference on one sample
+    _, test_loader = get_data_loaders()
+    test_img = next(iter(test_loader))[0][0]
+    predicted_class = torch.argmax(model(test_img)).item()
+
+    # Plot test image
+    plt.figure(figsize=(2, 2))
+    test_img = test_img.numpy().reshape((1, 1, 28, 28))
+    plt.imshow(test_img.reshape((28, 28)))
+    plt.title(f"Predicted: {predicted_class}")
+    plt.show()
+
+    return result_grid, best_result
+
+if __name__ == "__main__":
+    # Specify your experiment path
+    EXPERIMENT_PATH = "/tmp/ray_results/tune_analyzing_results"
+    
+    # Run analysis
+    result_grid, best_result = analyze_tune_results(EXPERIMENT_PATH)
