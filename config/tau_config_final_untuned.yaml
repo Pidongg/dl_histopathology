@@ -1,0 +1,32 @@
+data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
+epochs: 300
+optimizer: 'AdamW'
+plots: True
+val: True
+batch: -1
+
+momentum: 0.805
+warmup_epochs: 3.86
+warmup_momentum: 0.937
+warmup_bias_lr: 0.1
+weight_decay: 0.00043
+
+lr0: 0.001
+lrf: 0.01
+
+hsv_h: 0
+hsv_s: 0
+hsv_v: 0
+perspective: 0.0
+bgr: 0.0
+mosaic: 0
+mixup: 0.0
+erasing: 0
+
+degrees: 15
+translate: 0.1
+flipud: 0.42503
+fliplr: 0.66767
+scale: 0.5
+shear: 5.0
+auto_augment: False
