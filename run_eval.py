@@ -1,6 +1,6 @@
 from ultralytics import YOLO
 import torch
-from evaluation.evaluator import YoloEvaluator, RCNNEvaluator
+from evaluation.evaluator import SAHIYoloEvaluator, YoloEvaluator, RCNNEvaluator
 from data_preparation import data_utils
 import argparse
 import yaml
@@ -26,7 +26,17 @@ def main():
                         help="Path to test set label directory")
     parser.add_argument("-name",
                         help="(Optional) Identifier to prefix any output plots with")
-
+    
+    # Add after other parser arguments
+    parser.add_argument("-sahi", action="store_true",
+                        help="Use SAHI tiled inference for evaluation",
+                        default=False)
+    parser.add_argument("--slice_size", type=int,
+                        help="Slice size for SAHI tiled inference",
+                        default=256)
+    parser.add_argument("--overlap_ratio", type=float,
+                        help="Overlap ratio for SAHI tiled inference",
+                        default=0.2)
     args = parser.parse_args()
 
     model_path = args.model
@@ -82,20 +92,22 @@ def main():
         model = YOLO(model_path)
         model.to(device)
 
-        evaluator = YoloEvaluator(model,
-                                  test_imgs=test_images,
-                                  test_labels=test_labels,
-                                  device=device,
-                                  class_dict=class_dict,
-                                  save_dir=save_dir)
-
-        evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
-
-        matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True)
-        print(matrix)
-
-        print("mAP@50: ", evaluator.map50())
-        print("mAP@50-95: ", evaluator.map50_95())
+        if args.sahi:
+            evaluator = SAHIYoloEvaluator(model,
+                                        test_imgs=test_images,
+                                        test_labels=test_labels,
+                                        device=device,
+                                        class_dict=class_dict,
+                                        save_dir=save_dir,
+                                    slice_size=args.slice_size,
+                                    overlap_ratio=args.overlap_ratio)
+        else:
+            evaluator = YoloEvaluator(model,
+                                    test_imgs=test_images,
+                                    test_labels=test_labels,
+                                    device=device,
+                                    class_dict=class_dict,
+                                    save_dir=save_dir)  
 
     elif args.rcnn:
         # load model

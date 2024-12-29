@@ -5,6 +5,7 @@ from data_preparation import data_utils, image_labelling
 from .metrics import ObjectDetectionMetrics
 from abc import ABC, abstractmethod
 from torchvision.io import read_image
+from sahi.predict import get_sliced_prediction
 
 
 class Evaluator:
@@ -110,7 +111,37 @@ class YoloEvaluator(Evaluator):
 
         return ground_truths, predictions
 
+class SAHIYoloEvaluator(YoloEvaluator):
+    def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir, slice_size=256, overlap_ratio=0.2):
+        self.slice_size = slice_size
+        self.overlap_ratio = overlap_ratio
+        super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir)
 
+    def infer_for_one_img(self, img_path):
+        ground_truths = self.get_labels_for_image(img_path)
+        
+        # Use SAHI's sliced prediction
+        result = get_sliced_prediction(
+            img_path,
+            self.model,
+            slice_height=self.slice_size,
+            slice_width=self.slice_size,
+            overlap_height_ratio=self.overlap_ratio,
+            overlap_width_ratio=self.overlap_ratio,
+            verbose=0
+        )
+        
+        # Convert SAHI predictions to the expected format
+        predictions = torch.zeros((len(result.object_prediction_list), 6))
+        for idx, pred in enumerate(result.object_prediction_list):
+            bbox = pred.bbox.to_xyxy()
+            predictions[idx] = torch.tensor([
+                bbox[0], bbox[1], bbox[2], bbox[3],
+                pred.score.value,
+                pred.category.id
+            ])
+        
+        return ground_truths, predictions
 class RCNNEvaluator(Evaluator):
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir):
         super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir)
