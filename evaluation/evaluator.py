@@ -5,8 +5,8 @@ from data_preparation import data_utils, image_labelling
 from .metrics import ObjectDetectionMetrics
 from abc import ABC, abstractmethod
 from torchvision.io import read_image
+from sahi import AutoDetectionModel
 from sahi.predict import get_sliced_prediction
-
 
 class Evaluator:
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir):
@@ -115,6 +115,13 @@ class SAHIYoloEvaluator(YoloEvaluator):
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir, slice_size=256, overlap_ratio=0.2):
         self.slice_size = slice_size
         self.overlap_ratio = overlap_ratio
+        # Create SAHI detection model
+        self.sahi_model = AutoDetectionModel.from_pretrained(
+            model_type="ultralytics",
+            model_path=model.ckpt_path,
+            confidence_threshold=0.0,  # Set to 0 to get all predictions
+            device=str(device)  # Convert device to string format
+        )
         super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir)
 
     def infer_for_one_img(self, img_path):
@@ -123,7 +130,7 @@ class SAHIYoloEvaluator(YoloEvaluator):
         # Use SAHI's sliced prediction
         result = get_sliced_prediction(
             img_path,
-            self.model,
+            self.sahi_model,
             slice_height=self.slice_size,
             slice_width=self.slice_size,
             overlap_height_ratio=self.overlap_ratio,
@@ -132,16 +139,17 @@ class SAHIYoloEvaluator(YoloEvaluator):
         )
         
         # Convert SAHI predictions to the expected format
-        predictions = torch.zeros((len(result.object_prediction_list), 6))
+        predictions = torch.zeros((len(result.object_prediction_list), 6), device=self.device)
         for idx, pred in enumerate(result.object_prediction_list):
             bbox = pred.bbox.to_xyxy()
             predictions[idx] = torch.tensor([
                 bbox[0], bbox[1], bbox[2], bbox[3],
                 pred.score.value,
                 pred.category.id
-            ])
+            ], device=self.device)
         
         return ground_truths, predictions
+
 class RCNNEvaluator(Evaluator):
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir):
         super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir)
