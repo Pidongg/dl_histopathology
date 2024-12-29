@@ -123,13 +123,13 @@ def main():
                                   class_dict=class_dict,
                                   save_dir=save_dir)
 
-        evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
+    evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
 
-        matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True)
-        print(matrix)
+    matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True)
+    print(matrix)
 
-        print("mAP@50: ", evaluator.map50())
-        print("mAP@50-95: ", evaluator.map50_95())
+    print("mAP@50: ", evaluator.map50())
+    print("mAP@50-95: ", evaluator.map50_95())
 
 
 if __name__ == "__main__":
