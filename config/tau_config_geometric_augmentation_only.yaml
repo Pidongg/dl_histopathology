@@ -19,7 +19,7 @@ mosaic: 0
 mixup: 0.0
 erasing: 0
 
-degrees: 15
+degrees: 36.35184
 translate: 0.1
 flipud: 0.42503
 fliplr: 0.66767
