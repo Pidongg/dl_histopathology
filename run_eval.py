@@ -125,7 +125,7 @@ def main():
 
     evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
 
-    matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True)
+    matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True, prefix=prefix)
     print(matrix)
 
     print("mAP@50: ", evaluator.map50())
