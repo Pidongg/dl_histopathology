@@ -3,7 +3,7 @@ import os
 import tqdm
 from data_preparation import data_utils, image_labelling
 from .metrics import ObjectDetectionMetrics
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from torchvision.io import read_image
 from sahi import AutoDetectionModel
 from sahi.predict import get_sliced_prediction
@@ -78,11 +78,11 @@ class Evaluator:
             self.preds.append(predictions)
             self.gt.append(ground_truths)
 
-    def confusion_matrix(self, conf_threshold=0.25, all_iou=False, plot=False):
+    def confusion_matrix(self, conf_threshold=0.25, all_iou=False, plot=False, prefix=""):
         if not self.preds and not self.gt:
             raise Exception("No predictions and/or ground truths found")
 
-        return self.metrics.get_confusion_matrix(conf_threshold, all_iou=all_iou, plot=plot)
+        return self.metrics.get_confusion_matrix(conf_threshold, all_iou=all_iou, plot=plot, prefix=prefix)
 
     def ap_per_class(self, plot=False, plot_all=False, prefix=""):
         """

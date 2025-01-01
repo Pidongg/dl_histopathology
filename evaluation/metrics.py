@@ -11,7 +11,6 @@ import torch
 from torch import Tensor
 import os
 
-
 def upcast(t: Tensor) -> Tensor:
     """
     Protects from numerical overflows in multiplications by upcasting to the equivalent higher type
@@ -273,6 +272,7 @@ class ObjectDetectionMetrics:
             # gt_per_pred: tensor[t, num_pred]
             gt_per_pred = np.zeros((t, n)) - 1
 
+            # iterate over each iou threshold
             for i, threshold in enumerate(self.iou_threshold.cpu().tolist()):
                 matches = np.nonzero(iou >= threshold)  # IoU > threshold and classes match
                 matches = np.array(matches).T
@@ -283,11 +283,15 @@ class ObjectDetectionMetrics:
                         matches = matches[iou[matches[:, 0], matches[:, 1]].argsort()[::-1]]
                         matches = matches[np.unique(matches[:, 1], return_index=True)[1]]
                         matches = matches[np.unique(matches[:, 0], return_index=True)[1]]
-
+                        
+                        # which prediction is matched to which gt
                         pred_per_gt[i, matches[:, 0]] = matches[:, 1] + num_preds_curr
+                        
+                        # which gt is matched to which prediction
                         gt_per_pred[i, matches[:, 1]] = matches[:, 0] + num_gt_curr
 
                     correct[i, matches[:, 1].astype(int)] = 1
+
             pred_true_all.append(torch.tensor(correct, dtype=torch.int, device=self.device))
 
             pred_per_gt_all.append(torch.tensor(pred_per_gt, dtype=torch.int, device=self.device))
@@ -512,4 +516,5 @@ class ObjectDetectionMetrics:
             self.ap_per_class(plot=False)
 
         return self.ap.mean(dim=-1).mean()
+
 
