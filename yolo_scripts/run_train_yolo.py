@@ -3,6 +3,75 @@ import yaml
 import argparse
 import torch
 from ultralytics.utils import LOGGER
+import torch.nn as nn
+import numpy as np
+from sklearn.utils.class_weight import compute_class_weight
+
+def log_batch_stats(trainer):
+    """Callback to log training configuration and batch statistics at start of training"""
+    try:
+        # Log training configuration
+        LOGGER.info(f"Training args: {trainer.args}")
+        LOGGER.info(f"Data args: {trainer.data}")
+        
+        # Log model parameters
+        LOGGER.info(f"Image size: {trainer.args.imgsz}")
+        LOGGER.info(f"Device: {trainer.device}")
+        LOGGER.info(f"Number of classes: {trainer.model.nc}")
+        
+        # Log initial class distribution if available
+        if hasattr(trainer.validator, 'dataloader'):
+            val_loader = trainer.validator.dataloader
+            all_targets = []
+            for batch in val_loader:
+                labels = batch['bboxes'].to(trainer.device)
+                all_targets.append(labels)
+            targets = torch.cat(all_targets, dim=0)
+            class_counts = torch.bincount(targets[:, -1].long(), minlength=trainer.model.nc)
+            LOGGER.info(f"Initial class distribution: {class_counts}")
+            
+    except Exception as e:
+        LOGGER.error(f"Debug info error: {str(e)}")
+
+def update_class_weights(trainer):
+    """Callback to update class weights based on validation set distribution"""
+    try:
+        # Get validation dataloader
+        val_loader = trainer.validator.dataloader
+        
+        # Collect all targets from validation set
+        all_targets = []
+        for batch in val_loader:
+            labels = batch['bboxes'].to(trainer.device)
+            all_targets.append(labels)
+            
+        # Concatenate all targets
+        targets = torch.cat(all_targets, dim=0)
+        
+        # Get class labels
+        y = targets[:, -1].cpu().numpy()  # Convert to numpy array
+        classes = np.unique(y)  # Get unique classes
+        
+        # Calculate balanced weights using sklearn
+        class_weights = compute_class_weight(
+            class_weight="balanced",
+            classes=classes,
+            y=y
+        )
+        
+        # Convert to tensor and move to device
+        class_weights = torch.from_numpy(class_weights).float().to(trainer.device)
+        
+        # Create new CrossEntropyLoss with updated weights
+        trainer.model.loss.ce = nn.CrossEntropyLoss(
+            weight=class_weights,
+            reduction="none"
+        )
+        
+        LOGGER.info(f"Updated class weights: {class_weights}")
+        
+    except Exception as e:
+        LOGGER.error(f"Error updating class weights: {str(e)}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -15,41 +84,20 @@ def main():
 
     args = parser.parse_args()
 
-    pretrained_model = args.pt
-    cfg = args.cfg
-
-    # Load a pretrained YOLO model
-    model = YOLO(pretrained_model)
+    # Load model and config
+    model = YOLO(args.pt)
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
 
-    # get hyperparameters
-    with open(cfg, "r") as stream:
-        try:
-            cfg_args = yaml.safe_load(stream)
-            # Print the crop_fraction from config
-            LOGGER.info(f"Config crop_fraction: {cfg_args.get('crop_fraction', 'Not specified')}")
-        except yaml.YAMLError as exc:
-            print(exc)
+    # Load config
+    with open(args.cfg, "r") as stream:
+        cfg_args = yaml.safe_load(stream)
 
-    # Add debug callback to check image sizes
-    def log_batch_stats(trainer):
-        try:
-            # Log training configuration
-            LOGGER.info(f"Training args: {trainer.args}")
-            LOGGER.info(f"Data args: {trainer.data}")
-            
-            # Try to access model parameters
-            LOGGER.info(f"Image size: {trainer.args.imgsz}")
-            LOGGER.info(f"Device: {trainer.device}")
-            
-        except Exception as e:
-            LOGGER.info(f"Debug info error: {str(e)}")
-            
-    # Add the callback to model
+    # Add callbacks
     model.add_callback("on_train_start", log_batch_stats)
+    model.add_callback("on_val_end", update_class_weights)  # Update weights after each validation
 
-    # train models
+    # Train model
     model.train(**cfg_args)
 
 if __name__ == "__main__":
