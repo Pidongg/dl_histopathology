@@ -5,7 +5,7 @@ def server = getCurrentServer()
 
 def imageName = GeneralTools.stripExtension(imageData.getServer().getMetadata().getName())
 // uncomment the following line and replace the placeholder
-// def outDir = /PATH_TO_OUTPUT_DIR/
+def outDir = 'M:/Unused/TauCellDL/test_labels'
 mkdirs(outDir)
 
 def filePath = buildFilePath(outDir, String.format('%s_detections.txt', imageName))

@@ -87,13 +87,11 @@ class DataPreparer:
         Print the number of images in each directory in the prepared image directory,
             along with the number of objects per image.
         """
-        root_img_dir = os.path.join(
-            self.prepared_root_dir, self.prepared_img_dir)
+        root_img_dir = "M:/Unused/TauCellDL/images"
         root_label_dir = os.path.join(
             self.prepared_root_dir, self.prepared_label_dir)
 
-        sets = [f for f in os.listdir(root_img_dir) if os.path.isdir(
-            os.path.join(root_img_dir, f))]
+        sets = [f for f in os.listdir(root_img_dir)]
 
         for set_name in sets:
             num_objects_per_class = defaultdict(int)
@@ -117,6 +115,15 @@ class DataPreparer:
                 f"Objects per class in set {set_name} : {num_objects_per_class}")
             print(f"Number of images in set {set_name}: {len(img_paths)}")
             num_objects_per_class.clear()
+
+    def load_dataset(self):
+        # Add somewhere in your dataset loading
+        class_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+        for batch in dataloader:
+            labels = batch['cls']
+            for cls in labels:
+                class_counts[cls.item()] += 1
+        print("Dataset class distribution:", class_counts)
 
 
 class BCSSPreparer(DataPreparer):
@@ -328,7 +335,7 @@ class TauPreparer(DataPreparer):
         count_objects: Count the number of images per set along with number of objects per class.
     """
 
-    def __init__(self, in_root_dir, in_img_dir, in_label_dir, prepared_root_dir, prepared_img_dir, prepared_label_dir):
+    def __init__(self, in_root_dir, in_img_dir, in_label_dir, prepared_root_dir, prepared_img_dir, prepared_label_dir, empty_tiles_required=None, with_segmentation=False, preprocessed_labels=False):
         super().__init__(in_root_dir, in_img_dir, prepared_root_dir,
                          prepared_img_dir, prepared_label_dir)
 
@@ -342,39 +349,47 @@ class TauPreparer(DataPreparer):
             'TA': 0,
             'CB': 1,
             'NFT': 2,
-            'tau_fragments': 3
+            'Others': 3,
+            'coiled': 1
         }
+        self.empty_tiles_required = empty_tiles_required
+        self.with_segmentation = with_segmentation
+        self.preprocessed_labels = preprocessed_labels
 
     def prepare_labels_for_yolo(self):
         """
         Goes through all the label files in `self.in_label_dir` and removes unlabelled annotations,
         divides all annotations per tile, and removes tiles with no annotations.
         """
-        for region in ['Cortical', 'DN', 'STR', 'STN&GP']:
-            print(f"Processing region {region}")
-            root_label_dir = os.path.join(
-                self.in_root_dir, self.in_label_dir, region)
-            root_img_dir = os.path.join(
-                self.in_root_dir, self.in_img_dir, region)
-            out_dir = os.path.join(
-                self.prepared_root_dir, self.prepared_label_dir, region)
+        print(f"Processing all regions")
+        root_label_dir = os.path.join(
+            self.in_root_dir, self.in_label_dir)
+        root_img_dir = os.path.join(
+            self.in_root_dir, self.in_img_dir)
+        out_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
 
-            if not os.path.exists(out_dir):
-                os.makedirs(out_dir)
+        if not os.path.exists(out_dir):
+            os.makedirs(out_dir)
 
-            label_preparer = LabelPreparer(root_label_dir=root_label_dir,
-                                           root_img_dir=root_img_dir,
-                                           out_dir=out_dir,
-                                           class_to_idx=self.class_to_idx)
+        label_preparer = LabelPreparer(root_label_dir=root_label_dir,
+                                        root_img_dir=root_img_dir,
+                                        out_dir=out_dir,
+                                        class_to_idx=self.class_to_idx, 
+                                        with_segmentation=self.with_segmentation,
+                                        preprocessed_labels=self.preprocessed_labels)
+        # print("\nCreating filtered detection lists...")
+        # label_preparer.remove_unlabelled_objects()
 
-            print("\nCreating filtered detection lists...")
-            label_preparer.remove_unlabelled_objects()
+        # print("\nSeparating labels by tile for each slide...")
+        # # label_preparer.separate_tiles_with_cut_log()
+        # # label_preparer.generate_cut_log_per_tile_with_length_threshold(length_threshold=25, tile_number=747297)
+        # label_preparer.separate_labels_by_tile(length_threshold=16)
 
-            print("\nSeparating labels by tile for each slide...")
-            label_preparer.separate_labels_by_tile()
+        print("\nDeleting images/labels with empty label files...")
+        label_preparer.filter_files_with_no_labels()
 
-            print("\nDeleting images/labels with empty label files...")
-            label_preparer.delete_files_with_no_labels()
+        if self.empty_tiles_required is not None:
+            label_preparer.add_empty_tiles(self.empty_tiles_required)
 
     def train_test_val_split(self, train: float, test: float, valid: float):
         """
@@ -451,19 +466,20 @@ class TauPreparer(DataPreparer):
                 # delete empty slide directory
                 os.rmdir(in_img_dir)
                 os.rmdir(in_label_dir)
-
-    def show_bboxes(self, set_type: str):
+    
+    def show_bboxes(self, set_type: str, img_dir: str, label_dir: str, ext: str = ""):
         """
         Displays bboxes from a certain set, one image at a time.
 
         Args:
             set_type (str): Name of set to view masks and bboxes from (e.g. "train", "test", "valid").
         """
-        img_paths = data_utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
-                                                                 self.prepared_img_dir,
-                                                                 set_type),
+        # img_paths = data_utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
+        #                                                          self.prepared_img_dir,
+        #                                                          set_type),
+        #                                             ".png")
+        img_paths = data_utils.list_files_of_a_type(img_dir,
                                                     ".png")
-
         class_to_colour = {
             0: "green",
             1: "#19ffe8",  # cyan
@@ -476,10 +492,68 @@ class TauPreparer(DataPreparer):
             print("viewing", filename)
 
             label_path = os.path.join(
-                self.prepared_root_dir, self.prepared_label_dir, set_type, filename + ".txt")
+                label_dir, filename + ext+".txt")
             bboxes, labels = image_labelling.bboxes_from_yolo_labels(
                 label_path)
+            if len(bboxes) == 0:
+                continue    
+            print(bboxes)
             colours = [class_to_colour[ci] for ci in labels]
             image_labelling.show_bboxes(
                 img_path, bboxes, labels=labels, colours=colours)
             _ = input("enter to continue")
+
+    def separate_by_tiles_dict(self, tiles_dict: dict):
+        """
+        Separates images and labels into train and validation sets according to a dictionary
+        specifying which slides belong to which set. Moves entire folders instead of individual files.
+
+        Args:
+            tiles_dict (dict): A dictionary specifying which slides belong to which set.
+                Format: {
+                    "train": {"bg": [slide_ids], "cortical": [slide_ids], "dn": [slide_ids]},
+                    "validation": {"bg": [slide_ids], "cortical": [slide_ids], "dn": [slide_ids]},
+                    "test": {"bg": [slide_ids], "cortical": [slide_ids], "dn": [slide_ids]}
+                }
+        """
+        # Create target directories if they don't exist
+        for set_type in tiles_dict.keys():
+            target_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir, set_type)
+            target_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type)
+            
+            if not os.path.exists(target_img_dir):
+                os.makedirs(target_img_dir)
+            if not os.path.exists(target_label_dir):
+                os.makedirs(target_label_dir)
+
+        # For each set type (only train and validation)
+        for set_type, regions in tiles_dict.items():
+                
+            print(f"\nProcessing {set_type} set...")
+            
+            # For each region (bg/cortical/dn)
+            for region, slide_ids in regions.items():
+                print(f"Processing {region} region...")
+                
+                # For each slide in this region
+                for slide_id in slide_ids:
+                    # Source directories
+                    src_img_dir = os.path.join(self.in_root_dir, self.in_img_dir, f"{slide_id}kept")
+                    src_label_dir = os.path.join(self.in_root_dir, self.in_label_dir, f"{slide_id}kept")
+                    
+                    if not os.path.exists(src_img_dir):
+                        print(f"Warning: Image directory not found for slide {slide_id}")
+                        continue
+                    if not os.path.exists(src_label_dir):
+                        print(f"Warning: Label directory not found for slide {slide_id}")
+                        continue
+
+                    # Target directories with slide ID
+                    target_slide_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir, set_type, str(slide_id))
+                    target_slide_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type, str(slide_id))
+                    
+                    print(f"Moving folder for slide {slide_id}...")
+                    
+                    # Move entire directories
+                    shutil.move(src_img_dir, target_slide_img_dir)
+                    shutil.move(src_label_dir, target_slide_label_dir)

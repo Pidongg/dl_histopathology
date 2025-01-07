@@ -1,11 +1,4 @@
-"""
-This code is all adapted from the original ACRV Robotic Vision Challenge code.
-Adaptations have been made to enable some of the extra functionality needed in this repository.
-Link to original code: https://github.com/jskinn/rvchallenge-evaluation/blob/master/pdq.py
-Link to challenge websites:
-    - CVPR 2019: https://competitions.codalab.org/competitions/20940
-    - Continuous: https://competitions.codalab.org/competitions/21727
-"""
+# TODO: finish implementation
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 

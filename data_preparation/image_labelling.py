@@ -160,6 +160,7 @@ def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False):
 
         for i, line in enumerate(f):
             line = line.strip().split(' ')
+
             x_centre = float(line[1])
             y_centre = float(line[2])
             width = float(line[3])

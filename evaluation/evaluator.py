@@ -100,7 +100,6 @@ class Evaluator:
     def map50_95(self):
         return self.metrics.get_map50_95()
 
-
 class YoloEvaluator(Evaluator):
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir):
         super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir)

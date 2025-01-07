@@ -28,7 +28,10 @@ def list_files_of_a_type(directory, extension, recursive=False):
 
 def get_filename(file_path):
     """ Get the filename of a file without the extension. """
-    return os.path.splitext(os.path.basename(file_path))[0]
+    tile = file_path.split('-labelled')[0]
+    if not tile.endswith('.png'):
+        tile = tile + '.png'
+    return os.path.splitext(os.path.basename(tile))[0]
 
 
 def show_images(images: list[F.Tensor]):
