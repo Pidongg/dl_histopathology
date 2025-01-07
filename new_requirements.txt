@@ -1,0 +1,77 @@
+aiosignal==1.3.2
+albucore==0.0.21
+albumentations==1.4.22
+annotated-types==0.7.0
+attrs==24.3.0
+Brotli @ file:///croot/brotli-split_1714483155106/work
+certifi @ file:///croot/certifi_1725551672989/work/certifi
+charset-normalizer @ file:///croot/charset-normalizer_1721748349566/work
+click==8.1.8
+contourpy==1.3.1
+cycler==0.12.1
+eval_type_backport==0.2.0
+filelock @ file:///croot/filelock_1700591183607/work
+fire==0.7.0
+fonttools==4.55.3
+frozenlist==1.5.0
+fsspec==2024.10.0
+gmpy2 @ file:///work/ci_py311/gmpy2_1676839849213/work
+idna @ file:///croot/idna_1714398848350/work
+Jinja2 @ file:///croot/jinja2_1730902924303/work
+joblib==1.4.2
+jsonschema==4.23.0
+jsonschema-specifications==2024.10.1
+kiwisolver==1.4.7
+MarkupSafe @ file:///croot/markupsafe_1704205993651/work
+matplotlib==3.10.0
+mkl-service==2.4.0
+mkl_fft @ file:///io/mkl313/mkl_fft_1730824109137/work
+mkl_random @ file:///io/mkl313/mkl_random_1730823916628/work
+mpmath @ file:///croot/mpmath_1690848262763/work
+msgpack==1.1.0
+networkx @ file:///croot/networkx_1717597493534/work
+numpy==1.26.4
+opencv-python==4.10.0.84
+opencv-python-headless==4.10.0.84
+packaging==24.2
+pandas==2.2.3
+pillow @ file:///croot/pillow_1731594689713/work
+protobuf==5.29.2
+psutil==6.1.0
+py-cpuinfo==9.0.0
+pyarrow==18.1.0
+pybboxes==0.1.6
+pydantic==2.10.3
+pydantic_core==2.27.1
+pyparsing==3.2.0
+PySocks @ file:///work/ci_py311/pysocks_1676822712504/work
+python-dateutil==2.9.0.post0
+pytz==2024.2
+PyYAML @ file:///croot/pyyaml_1728657952215/work
+ray==2.40.0
+referencing==0.35.1
+requests @ file:///croot/requests_1730999120400/work
+rpds-py==0.22.3
+sahi==0.11.20
+scikit-learn==1.6.0
+scipy==1.14.1
+seaborn==0.13.2
+shapely==2.0.6
+simsimd==6.2.1
+six==1.17.0
+stringzilla==3.11.1
+sympy==1.13.1
+tensorboardX==2.6.2.2
+termcolor==2.5.0
+terminaltables==3.1.10
+threadpoolctl==3.5.0
+torch==2.5.1
+torchaudio==2.5.1
+torchvision==0.20.1
+tqdm==4.67.1
+triton==3.1.0
+typing_extensions==4.12.2
+tzdata==2024.2
+ultralytics==8.3.55
+ultralytics-thop==2.0.13
+urllib3 @ file:///croot/urllib3_1727769808118/work
