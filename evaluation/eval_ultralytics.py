@@ -9,7 +9,11 @@ import matplotlib.pyplot as plt
 
 def plot_confusion_matrix(confusion_matrix, class_names):
     """Plot confusion matrix using seaborn"""
+    # Get the matrix data and resize it to match the number of classes
     array = confusion_matrix.matrix
+    n_classes = len(class_names)
+    array = array[:n_classes, :n_classes]  # Take only the relevant classes
+    
     df_cm = pd.DataFrame(array, index=class_names, columns=class_names)
     
     plt.figure(figsize=(10, 7))
@@ -35,6 +39,13 @@ def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
 
+    # Load class names first to ensure they match the model
+    with open(args.cfg, 'r') as f:
+        config = yaml.safe_load(f)
+    class_names = config['names']
+    print(f"Number of classes: {len(class_names)}")
+    print(f"Class names: {class_names}")
+
     metrics = model.val(data=args.cfg, conf=0.25, iou=0.5)
     
     # Print metrics
@@ -45,9 +56,7 @@ def main():
 
     # Get and plot confusion matrix
     confusion_matrix = metrics.confusion_matrix
-    with open(args.cfg, 'r') as f:
-        config = yaml.safe_load(f)
-    class_names = config['names']
+    print(f"Confusion matrix shape: {confusion_matrix.matrix.shape}")
     
     plot_confusion_matrix(confusion_matrix, class_names)
 
