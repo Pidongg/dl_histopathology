@@ -9,8 +9,9 @@ import matplotlib.pyplot as plt
 import json
 from pathlib import Path
 
+import os
 import sys
-sys.path.append('./pdq_evaluation')
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'pdq_evaluation')))
 from read_files import convert_yolo_to_rvc
 
 def plot_confusion_matrix(confusion_matrix, class_names):
