@@ -7,24 +7,9 @@ import seaborn as sn
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def weight_monitor(trainer):
-    """Callback to monitor weight updates and dataset coverage"""
-    if not hasattr(trainer, 'batch_counts'):
-        trainer.batch_counts = {}
-    
-    # Count batches per epoch
-    if trainer.epoch not in trainer.batch_counts:
-        trainer.batch_counts[trainer.epoch] = 0
-    trainer.batch_counts[trainer.epoch] += 1
-    
-    # Print at end of each epoch
-    if trainer.batch == trainer.trainer.nb - 1:  # Last batch of epoch
-        print(f"\nEpoch {trainer.epoch} saw {trainer.batch_counts[trainer.epoch]} batches")
-        print(f"Total images seen: {trainer.batch_counts[trainer.epoch] * trainer.args.batch}")
-
 def plot_confusion_matrix(confusion_matrix, class_names):
     """Plot confusion matrix using seaborn"""
-    array = confusion_matrix.cpu().numpy()
+    array = confusion_matrix.matrix
     df_cm = pd.DataFrame(array, index=class_names, columns=class_names)
     
     plt.figure(figsize=(10, 7))
