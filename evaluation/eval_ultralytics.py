@@ -31,6 +31,12 @@ def main():
     parser.add_argument("-cfg",
                         help="Path to data config file",
                         default='/local/scratch/pz286/dl_histopathology/config/tau_data_test.yaml')
+    parser.add_argument("-conf", 
+                        help='confidence threshold',
+                        default=0.25)
+    parser.add_argument("-iou", 
+                        help='iou threshold',
+                        default=0.5)
 
     args = parser.parse_args()
 
@@ -46,7 +52,7 @@ def main():
     print(f"Number of classes: {len(class_names)}")
     print(f"Class names: {class_names}")
 
-    metrics = model.val(data=args.cfg, conf=0.25, iou=0.5)
+    metrics = model.val(data=args.cfg, conf=args.conf, iou=args.iou)
     
     # Print metrics
     print(f"mAP50-95: {metrics.box.map:.4f}")
