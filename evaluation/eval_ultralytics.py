@@ -52,7 +52,7 @@ def main():
     print(f"Number of classes: {len(class_names)}")
     print(f"Class names: {class_names}")
 
-    metrics = model.val(data=args.cfg, conf=args.conf, iou=args.iou)
+    metrics = model.val(data=args.cfg, conf=float(args.conf), iou=float(args.iou))
     
     # Print metrics
     print(f"mAP50-95: {metrics.box.map:.4f}")
