@@ -13,7 +13,7 @@ import torch
 import shutil
 from collections import defaultdict
 
-from . import data_utils, image_labelling
+import data_utils, image_labelling
 from .qupath_label_preparation import LabelPreparer
 
 
@@ -115,15 +115,6 @@ class DataPreparer:
                 f"Objects per class in set {set_name} : {num_objects_per_class}")
             print(f"Number of images in set {set_name}: {len(img_paths)}")
             num_objects_per_class.clear()
-
-    def load_dataset(self):
-        # Add somewhere in your dataset loading
-        class_counts = {0: 0, 1: 0, 2: 0, 3: 0}
-        for batch in dataloader:
-            labels = batch['cls']
-            for cls in labels:
-                class_counts[cls.item()] += 1
-        print("Dataset class distribution:", class_counts)
 
 
 class BCSSPreparer(DataPreparer):

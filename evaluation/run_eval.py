@@ -4,7 +4,7 @@ from evaluation.evaluator import SAHIYoloEvaluator, YoloEvaluator, RCNNEvaluator
 from data_preparation import data_utils
 import argparse
 import yaml
-import run_train_rcnn
+import train_model.run_train_rcnn as run_train_rcnn
 import os
 
 

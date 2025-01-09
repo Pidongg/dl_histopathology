@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
 
 class DetectionInstance:
     """Holds information for a single detection instance."""
@@ -77,3 +78,54 @@ def compute_segmentation_mask_for_bbox(x1, y1, x2, y2, segmentation_img_path):
     bbox_mask = seg_img[y1:y2+1, x1:x2+1]
     
     return bbox_mask
+
+def visualize_segmentation(image_path, segmentation_mask, bbox, save_path=None):
+    """
+    Visualize segmentation mask overlaid on original image
+    
+    Args:
+        image_path (str): Path to original image
+        segmentation_mask (np.ndarray): Binary segmentation mask
+        bbox (list): [x0, y0, x1, y1] coordinates
+        save_path (str, optional): Path to save visualization
+    """
+    # Read original image
+    image = cv2.imread(str(image_path))
+    if image is None:
+        raise ValueError(f"Could not read image: {image_path}")
+    
+    # Convert BGR to RGB
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    # Create overlay
+    overlay = image.copy()
+    
+    # Convert bbox coordinates to integers
+    x0, y0, x1, y1 = map(int, bbox)
+    
+    # Create mask overlay (red color)
+    mask_region = overlay[y0:y1+1, x0:x1+1]
+    mask_overlay = np.zeros_like(mask_region)
+    mask_overlay[segmentation_mask > 0] = [255, 0, 0]  # Red color for mask
+    
+    # Blend mask with image
+    alpha = 0.5  # Transparency factor
+    mask_region[segmentation_mask > 0] = cv2.addWeighted(
+        mask_region[segmentation_mask > 0], 
+        1-alpha,
+        mask_overlay[segmentation_mask > 0], 
+        alpha, 
+        0
+    )
+    
+    # Draw bounding box
+    cv2.rectangle(overlay, (x0, y0), (x1, y1), (0, 255, 0), 2)
+    
+    # Display
+    plt.figure(figsize=(10, 10))
+    plt.imshow(overlay)
+    plt.axis('off')
+    
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
+    plt.show()

@@ -1,0 +1,3 @@
+[submodule "pdq_evaluation"]
+	path = pdq_evaluation
+	url = https://github.com/tjiagoM/pdq_evaluation.git

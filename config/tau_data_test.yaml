@@ -1,0 +1,10 @@
+path: "/local/scratch/pz286"  # changed to parent directory
+train: images/train  
+val: images/test
+
+# Classes
+names:
+  0: TA
+  1: CB
+  2: NFT
+  3: tau_fragments

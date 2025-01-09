@@ -1,5 +1,4 @@
-from data_preparation.dataset_preparation import TauPreparer
-import os
+from dataset_preparation import TauPreparer
 
 in_root_dir = "M:/Unused/TauCellDL"
 

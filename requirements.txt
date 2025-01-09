@@ -1,5 +1,5 @@
 aiosignal==1.3.2
-albucore==0.0.21
+albucore==0.0.19
 albumentations==1.4.20
 annotated-types==0.7.0
 asttokens==2.4.1
