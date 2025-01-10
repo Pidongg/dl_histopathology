@@ -39,35 +39,60 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path):
     with open(data_yaml, 'r') as f:
         data_config = yaml.safe_load(f)
     
-    # Get validation images
-    val_images = data_config.get('val', '')
-    if isinstance(val_images, str):
-        val_images = [val_images]
+    # Get base path and validation images path
+    base_path = data_config.get('path', '')
+    val_path = data_config.get('val', '')
+    
+    # Construct full validation path
+    full_val_path = Path(base_path) / val_path
+    print(f"Looking for validation images in: {full_val_path}")
+    
+    if not full_val_path.exists():
+        print(f"Error: Validation path {full_val_path} does not exist!")
+        return
+    
+    # Count processed images
+    processed_count = 0
     
     # Run predictions on validation set
-    for img_path in val_images:
-        img_dir = Path(img_path)
-        if img_dir.is_dir():
-            for img_file in img_dir.glob('*.[jp][pn][gf]'):  # Match jpg, png, jpeg
-                results = model.predict(str(img_file), conf=conf_thresh)[0]
-                boxes = results.boxes
-                if len(boxes) > 0:
-                    # Convert boxes to desired format [x1, y1, x2, y2, conf, class_id]
-                    predictions = []
-                    for box in boxes:
-                        x1, y1, x2, y2 = box.xyxy.cpu().numpy()[0]
-                        conf = float(box.conf.cpu().numpy()[0])
-                        cls_id = int(box.cls.cpu().numpy()[0])
-                        predictions.append([float(x1), float(y1), float(x2), float(y2), conf, cls_id])
-                    results_dict[img_file.name] = predictions
-                else:
-                    results_dict[img_file.name] = []
+    for img_file in full_val_path.glob('*.[jp][pn][gf]'):  # Match jpg, png, jpeg
+        print(f"Processing image: {img_file}")
+        results = model.predict(str(img_file), conf=conf_thresh)[0]
+        boxes = results.boxes
+        
+        # Convert boxes to desired format [x1, y1, x2, y2, conf, class_id]
+        predictions = []
+        if len(boxes) > 0:
+            for box in boxes:
+                x1, y1, x2, y2 = box.xyxy.cpu().numpy()[0]
+                conf = float(box.conf.cpu().numpy()[0])
+                cls_id = int(box.cls.cpu().numpy()[0])
+                predictions.append([float(x1), float(y1), float(x2), float(y2), conf, cls_id])
+                print(f"Found detection: class={cls_id}, conf={conf:.3f}, box=[{x1:.1f}, {y1:.1f}, {x2:.1f}, {y2:.1f}]")
+        
+        results_dict[img_file.name] = predictions
+        processed_count += 1
+    
+    print(f"Processed {processed_count} images")
+    print(f"Found predictions for {len(results_dict)} images")
+    
+    if processed_count == 0:
+        print("Warning: No images were found to process!")
     
     # Save to JSON
     with open(save_path, 'w') as f:
         json.dump(results_dict, f, indent=2)
     
     print(f"Saved predictions to {save_path}")
+    
+    # Verify the saved file
+    if os.path.exists(save_path):
+        file_size = os.path.getsize(save_path)
+        print(f"Saved file size: {file_size} bytes")
+        if file_size == 0:
+            print("Warning: Saved file is empty!")
+    else:
+        print("Error: Failed to save predictions file!")
 
 def main():
     parser = argparse.ArgumentParser()
