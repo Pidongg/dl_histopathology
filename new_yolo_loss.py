@@ -18,7 +18,7 @@ class v8DetectionLoss:
         class_weights = torch.tensor([3.0,2.0,3.0,1.0])
         # original: 
         # self.bce = nn.BCEWithLogitsLoss(reduction="none")
-        self.ce = nn.CrossEntropyLoss(weight=class_weights.half().to(self.device),reduction="sum")
+        self.ce = nn.CrossEntropyLoss(weight=class_weights.to(self.device),reduction="sum")
 
         self.use_dfl = m.reg_max > 1
 
@@ -95,8 +95,19 @@ class v8DetectionLoss:
         # Cls loss
         # original: 
         # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        # Modified cls loss calculation
         pred_scores_reshaped = pred_scores.view(-1, self.nc)
-        target_classes = target_scores.view(-1, self.nc).argmax(dim=1)
+        target_classes = torch.zeros(pred_scores.shape[0] * pred_scores.shape[1], 
+                               dtype=torch.long, 
+                               device=self.device)
+    
+        if fg_mask.any():
+            # Only process positive targets
+            positive_indices = fg_mask.view(-1).nonzero().squeeze(1)
+            target_classes[positive_indices] = target_scores.view(-1, self.nc)[positive_indices].argmax(dim=1)
+            
+            print(target_classes)
+            
         loss[1] = self.ce(pred_scores_reshaped, target_classes)/target_scores_sum
 
         # Bbox loss

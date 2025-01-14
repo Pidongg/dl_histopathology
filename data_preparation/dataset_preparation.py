@@ -14,7 +14,7 @@ import shutil
 from collections import defaultdict
 
 import data_utils, image_labelling
-from .qupath_label_preparation import LabelPreparer
+from qupath_label_preparation import LabelPreparer
 
 
 class DataPreparer:
@@ -379,8 +379,8 @@ class TauPreparer(DataPreparer):
         print("\nDeleting images/labels with empty label files...")
         label_preparer.filter_files_with_no_labels()
 
-        if self.empty_tiles_required is not None:
-            label_preparer.add_empty_tiles(self.empty_tiles_required)
+        # if self.empty_tiles_required is not None:
+        #     label_preparer.add_empty_tiles(self.empty_tiles_required)
 
     def train_test_val_split(self, train: float, test: float, valid: float):
         """

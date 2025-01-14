@@ -32,65 +32,39 @@ def plot_confusion_matrix(confusion_matrix, class_names):
 
 def save_predictions_to_json(model, data_yaml, conf_thresh, save_path):
     """Save model predictions to JSON in YOLO format"""
-    # Initialize results dictionary
     results_dict = {}
     
-    # Get dataset from YAML
-    try:
-        with open(data_yaml, 'r') as f:
-            data_config = yaml.safe_load(f)
-            print(f"Loaded data config: {data_config}")
-    except Exception as e:
-        print(f"Error loading YAML file: {e}")
-        return
+    # Load dataset config
+    with open(data_yaml, 'r') as f:
+        data_config = yaml.safe_load(f)
     
     # Get base path and validation images path
     base_path = data_config.get('path', '')
     val_path = data_config.get('val', '')
-    print(f"Base path: {base_path}")
-    print(f"Val path: {val_path}")
     
     # Try both absolute and relative paths
     full_val_paths = [
-        Path(base_path) / val_path,  # Relative to base path
-        Path(val_path),              # Direct path
-        Path(os.path.dirname(data_yaml)) / val_path  # Relative to config file
+        Path(base_path) / val_path,
+        Path(val_path),
+        Path(os.path.dirname(data_yaml)) / val_path
     ]
     
-    valid_path = None
-    for path in full_val_paths:
-        print(f"Checking path: {path}")
-        if path.exists():
-            print(f"Found valid path: {path}")
-            valid_path = path
-            break
-    
+    valid_path = next((path for path in full_val_paths if path.exists()), None)
     if valid_path is None:
-        print("Error: No valid validation path found!")
-        print("Tried the following paths:")
-        for path in full_val_paths:
-            print(f"  - {path}")
+        LOGGER.error("No valid validation path found!")
         return
     
-    # Count processed images
-    processed_count = 0
-    
-    # List all image files first
-    image_files = list(valid_path.glob('*.[jp][pn][gf]'))
-    print(f"Found {len(image_files)} image files")
+    # List all image files recursively
+    image_files = []
+    for ext in ['*.jpg', '*.jpeg', '*.png']:
+        image_files.extend(list(valid_path.rglob(ext)))
     
     # Run predictions on validation set
     for img_file in image_files:
         try:
-            print(f"\nProcessing image: {img_file}")
             results = model.predict(str(img_file), conf=conf_thresh)[0]
             boxes = results.boxes
             
-            # Print raw results for debugging
-            print(f"Raw prediction results: {results}")
-            print(f"Number of boxes detected: {len(boxes)}")
-            
-            # Convert boxes to desired format [x1, y1, x2, y2, conf, class_id]
             predictions = []
             if len(boxes) > 0:
                 for box in boxes:
@@ -99,46 +73,23 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path):
                         conf = float(box.conf.cpu().numpy()[0])
                         cls_id = int(box.cls.cpu().numpy()[0])
                         predictions.append([float(x1), float(y1), float(x2), float(y2), conf, cls_id])
-                        print(f"Found detection: class={cls_id}, conf={conf:.3f}, box=[{x1:.1f}, {y1:.1f}, {x2:.1f}, {y2:.1f}]")
                     except Exception as e:
-                        print(f"Error processing box: {e}")
+                        LOGGER.warning(f"Error processing box: {e}")
                         continue
             
-            results_dict[img_file.name] = predictions
-            processed_count += 1
+            rel_path = str(img_file.relative_to(valid_path))
+            results_dict[rel_path] = predictions
             
         except Exception as e:
-            print(f"Error processing image {img_file}: {e}")
+            LOGGER.warning(f"Error processing image {img_file}: {e}")
             continue
-    
-    print(f"\nProcessing Summary:")
-    print(f"Processed {processed_count} images")
-    print(f"Found predictions for {len(results_dict)} images")
-    print(f"Total number of predictions: {sum(len(preds) for preds in results_dict.values())}")
-    
-    if processed_count == 0:
-        print("Warning: No images were processed!")
-        return
     
     # Save to JSON
     try:
         with open(save_path, 'w') as f:
             json.dump(results_dict, f, indent=2)
-        
-        # Verify the saved file
-        file_size = os.path.getsize(save_path)
-        print(f"\nFile saved successfully:")
-        print(f"Path: {save_path}")
-        print(f"Size: {file_size} bytes")
-        
-        # Read back and verify content
-        with open(save_path, 'r') as f:
-            saved_data = json.load(f)
-            print(f"Number of images in saved file: {len(saved_data)}")
-            print(f"Total predictions in saved file: {sum(len(preds) for preds in saved_data.values())}")
-            
     except Exception as e:
-        print(f"Error saving predictions to {save_path}: {e}")
+        LOGGER.error(f"Error saving predictions to {save_path}: {e}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -160,6 +111,9 @@ def main():
     parser.add_argument("-save_rvc",
                         help='Path to save RVC format predictions JSON',
                         default='predictions_rvc.json')
+    parser.add_argument("--save_detections", 
+                        action='store_true',
+                        help='Whether to save detection results to JSON files')
 
     args = parser.parse_args()
 
@@ -168,32 +122,31 @@ def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model.to(device)
 
-    # Load class names first to ensure they match the model
+    # Load class names
     with open(args.cfg, 'r') as f:
         config = yaml.safe_load(f)
     class_names = config['names']
-    print(f"Number of classes: {len(class_names)}")
-    print(f"Class names: {class_names}")
+    LOGGER.info(f"Loaded {len(class_names)} classes")
 
-    # Save predictions to YOLO format JSON
-    save_predictions_to_json(model, args.cfg, float(args.conf), args.save_json)
-    
-    # Convert to RVC format
-    convert_yolo_to_rvc(args.save_json, args.save_rvc, class_names)
+    # Save predictions only if flag is set
+    if args.save_detections:
+        LOGGER.info("Saving predictions to JSON files...")
+        save_predictions_to_json(model, args.cfg, float(args.conf), args.save_json)
+        convert_yolo_to_rvc(args.save_json, args.save_rvc, class_names)
+        LOGGER.info("Finished saving predictions")
     
     # Run validation and get metrics
+    LOGGER.info("Running validation...")
     metrics = model.val(data=args.cfg, conf=float(args.conf), iou=float(args.iou))
     
     # Print metrics
-    print(f"mAP50-95: {metrics.box.map:.4f}")
-    print(f"mAP50: {metrics.box.map50:.4f}")
-    print(f"mAP75: {metrics.box.map75:.4f}")
-    print(f"Per-class mAP50-95: {metrics.box.maps}")
+    LOGGER.info(f"mAP50-95: {metrics.box.map:.4f}")
+    LOGGER.info(f"mAP50: {metrics.box.map50:.4f}")
+    LOGGER.info(f"mAP75: {metrics.box.map75:.4f}")
+    LOGGER.info(f"Per-class mAP50-95: {metrics.box.maps}")
 
-    # Get and plot confusion matrix
+    # Plot confusion matrix
     confusion_matrix = metrics.confusion_matrix
-    print(f"Confusion matrix shape: {confusion_matrix.matrix.shape}")
-    
     plot_confusion_matrix(confusion_matrix, class_names)
 
 if __name__ == "__main__":

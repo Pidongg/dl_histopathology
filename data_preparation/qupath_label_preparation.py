@@ -4,8 +4,7 @@
 import os
 import random
 import tqdm
-
-from . import data_utils
+import data_utils
 
 import shutil
 

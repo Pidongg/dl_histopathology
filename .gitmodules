@@ -1,3 +1,7 @@
 [submodule "pdq_evaluation"]
 	path = pdq_evaluation
-	url = https://github.com/tjiagoM/pdq_evaluation.git
+	url = https://github.com/Pidongg/pdq_evaluation.git
+
+[submodule "lib/helper"]
+	path = lib/helper
+	url = https://github.com/example/helper.git
