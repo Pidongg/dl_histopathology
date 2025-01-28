@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+import torch
 
 class DetectionInstance:
     """Holds information for a single detection instance."""
@@ -62,22 +63,61 @@ def compute_segmentation_mask_for_bbox(x1, y1, x2, y2, segmentation_img_path):
     """Extract segmentation mask for a given bounding box.
     
     Args:
-        x1, y1, x2, y2 (int): Bounding box coordinates
+        x1, y1, x2, y2 (float): Bounding box coordinates
         segmentation_img_path (str): Path to segmentation mask image
         
     Returns:
-        np.ndarray: Binary segmentation mask for the bbox region
+        np.ndarray: Binary segmentation mask with same size as input image,
+                   where regions outside bbox are set to 0
     """
-    # Read segmentation mask
+    # Read segmentation mask and ensure it's a CPU numpy array
     seg_img = cv2.imread(str(segmentation_img_path), cv2.IMREAD_GRAYSCALE)
     if seg_img is None:
         raise ValueError(f"Could not read segmentation mask: {segmentation_img_path}")
-        
-    # Extract bbox region
-    x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
-    bbox_mask = seg_img[y1:y2+1, x1:x2+1]
     
-    return bbox_mask
+    # Convert coordinates to numpy if they're tensors
+    if torch.is_tensor(x1):
+        x1 = x1.cpu().numpy()
+    if torch.is_tensor(y1):
+        y1 = y1.cpu().numpy()
+    if torch.is_tensor(x2):
+        x2 = x2.cpu().numpy()
+    if torch.is_tensor(y2):
+        y2 = y2.cpu().numpy()
+    
+    # Create empty mask of same size
+    full_mask = np.zeros_like(seg_img)
+    
+    # Round coordinates to ensure we capture the full region
+    x1_idx = int(np.floor(x1))
+    y1_idx = int(np.floor(y1))
+    x2_idx = int(np.ceil(x2)) +1
+    y2_idx = int(np.ceil(y2)) +1
+    
+    # Ensure indices are within image bounds
+    height, width = seg_img.shape
+    x2_idx = min(width, x2_idx)
+    y2_idx = min(height, y2_idx)
+    
+    # Extract bbox region and place it in the full mask
+    bbox_region = seg_img[y1_idx:y2_idx, x1_idx:x2_idx]
+    
+    if bbox_region.size == 0 or np.all(bbox_region == 0):
+        # visualize_segmentation(
+        #     image_path=segmentation_img_path.replace('-labelled.png', '.png').replace('test_images_seg','images/test').replace('kept',''),
+        #     segmentation_mask=bbox_region,
+        #     bbox=[x1_idx, y1_idx, x2_idx, y2_idx],
+        #     save_path='debug_extracted_region.png'
+        # )
+        raise ValueError(
+            f"Ground truth instance must have non-zero segmentation mask within its bounding box. "
+            f"Check the segmentation mask at {segmentation_img_path} for bbox coordinates "
+            f"[{x1}, {y1}, {x2}, {y2}] (indexed as [{x1_idx}, {y1_idx}, {x2_idx}, {y2_idx}])"
+            f"height: {height}, width: {width}"
+        )
+    
+    full_mask[y1_idx:y2_idx, x1_idx:x2_idx] = bbox_region
+    return full_mask
 
 def visualize_segmentation(image_path, segmentation_mask, bbox, save_path=None):
     """
@@ -85,10 +125,15 @@ def visualize_segmentation(image_path, segmentation_mask, bbox, save_path=None):
     
     Args:
         image_path (str): Path to original image
-        segmentation_mask (np.ndarray): Binary segmentation mask
+        segmentation_mask (np.ndarray): Binary segmentation mask. should be same size as bounding box.
         bbox (list): [x0, y0, x1, y1] coordinates
         save_path (str, optional): Path to save visualization
     """
+    # Check if segmentation mask is valid
+    if segmentation_mask is None or segmentation_mask.size == 0:
+        print(f"Warning: Empty or invalid segmentation mask")
+        return
+        
     # Read original image
     image = cv2.imread(str(image_path))
     if image is None:
@@ -104,19 +149,29 @@ def visualize_segmentation(image_path, segmentation_mask, bbox, save_path=None):
     x0, y0, x1, y1 = map(int, bbox)
     
     # Create mask overlay (red color)
-    mask_region = overlay[y0:y1+1, x0:x1+1]
-    mask_overlay = np.zeros_like(mask_region)
-    mask_overlay[segmentation_mask > 0] = [255, 0, 0]  # Red color for mask
-    
-    # Blend mask with image
-    alpha = 0.5  # Transparency factor
-    mask_region[segmentation_mask > 0] = cv2.addWeighted(
-        mask_region[segmentation_mask > 0], 
-        1-alpha,
-        mask_overlay[segmentation_mask > 0], 
-        alpha, 
-        0
-    )
+    try:
+        mask_region = overlay[y0:y1, x0:x1]
+        mask_overlay = np.zeros_like(mask_region)
+        
+        # Ensure segmentation mask matches the region size
+        if segmentation_mask.shape != mask_region.shape[:2]:
+            print(f"Warning: Segmentation mask shape {segmentation_mask.shape} doesn't match region shape {mask_region.shape[:2]}")
+            return
+            
+        mask_overlay[segmentation_mask > 0] = [255, 0, 0]  # Red color for mask
+        
+        # Blend mask with image using cv2.addWeighted
+        cv2.addWeighted(
+            mask_region,
+            0.5,  # alpha
+            mask_overlay,
+            0.5,  # beta = 1-alpha
+            0,    # gamma
+            dst=mask_region
+        )
+    except IndexError as e:
+        print(f"Warning: Could not overlay mask. Bbox coordinates [{x0}, {y0}, {x1}, {y1}] may be out of bounds for image shape {image.shape}")
+        return
     
     # Draw bounding box
     cv2.rectangle(overlay, (x0, y0), (x1, y1), (0, 255, 0), 2)

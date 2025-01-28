@@ -8,7 +8,12 @@ from torchvision.io import read_image
 from torchvision.ops import masks_to_boxes
 from torchvision.utils import draw_segmentation_masks, draw_bounding_boxes
 
-from data_utils import *
+import sys
+import os
+
+# Add project root to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from data_preparation.data_utils import *
 
 
 def get_masks_from_mask(mask_path: os.path):

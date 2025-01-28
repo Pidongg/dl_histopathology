@@ -1,7 +1,7 @@
 path: "M:/Unused/TauCellDL" # changed to parent directory
-train: images/train  
-val: images/validation
-test: images/test
+train: images/train/
+val: images/test/
+test: images/test/
 
 # Classes
 names:

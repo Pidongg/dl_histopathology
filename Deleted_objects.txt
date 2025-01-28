@@ -1,0 +1,3 @@
+/local/scratch/pz286/test_images_seg/703488/703488 [d=0.98892,x=103481,y=45570,w=506,h=506]-labelled.png for bbox coordinates [0.0, 0.0, 27.320158004760742, 30.355731964111328] (indexed as [0, 0, 29, 32])
+/local/scratch/pz286/test_images_seg/747821/747821 [d=0.98892,x=85918,y=67405,w=506,h=506]-labelled.png for bbox coordinates [491.7628479003906, 0.0, 512.0, 23.272727966308594] (indexed as [491, 0, 512, 25])
+771747/771747.svs_training_test_tanrada_5%_2 [d=0.98892,x=76424,y=27532,w=506,h=506]-labelled.png for bbox coordinates [489.7391357421875, 469.5019836425781, 512.0, 512.0] - removed line

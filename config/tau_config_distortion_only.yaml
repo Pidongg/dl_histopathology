@@ -26,10 +26,3 @@ fliplr: 0
 scale: 0.5
 shear: 5.0
 auto_augment: False
-
-# Loss hyperparameters should be defined here
-# Example structure:
-hyp:
-  box: 7.5     # box loss weight
-  cls: 7.5     # make equal to box loss
-  dfl: 1.5     # keep dfl loss the same

@@ -1,12 +1,15 @@
+import os
+import sys
+# Add project root to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from ultralytics import YOLO
 import torch
-from evaluation.evaluator import SAHIYoloEvaluator, YoloEvaluator, RCNNEvaluator
+from evaluator import SAHIYoloEvaluator, YoloEvaluator, RCNNEvaluator
 from data_preparation import data_utils
 import argparse
 import yaml
 import train_model.run_train_rcnn as run_train_rcnn
-import os
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -126,6 +129,8 @@ def main():
     evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
 
     matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True, prefix=prefix)
+    print(matrix)
+    matrix = evaluator.confusion_matrix(conf_threshold=0.0, all_iou=False, plot=True, prefix=prefix)
     print(matrix)
 
     print("mAP@50: ", evaluator.map50())

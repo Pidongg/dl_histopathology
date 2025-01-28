@@ -12,9 +12,10 @@ import glob
 import torch
 import shutil
 from collections import defaultdict
-
-import data_utils, image_labelling
-from qupath_label_preparation import LabelPreparer
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from data_preparation import data_utils, image_labelling
+from data_preparation.qupath_label_preparation import LabelPreparer
 
 
 class DataPreparer:
@@ -376,8 +377,8 @@ class TauPreparer(DataPreparer):
         # # label_preparer.generate_cut_log_per_tile_with_length_threshold(length_threshold=25, tile_number=747297)
         # label_preparer.separate_labels_by_tile(length_threshold=16)
 
-        print("\nDeleting images/labels with empty label files...")
-        label_preparer.filter_files_with_no_labels()
+        # print("\nDeleting images/labels with empty label files...")
+        label_preparer.filter_files_with_no_labels(50)
 
         # if self.empty_tiles_required is not None:
         #     label_preparer.add_empty_tiles(self.empty_tiles_required)

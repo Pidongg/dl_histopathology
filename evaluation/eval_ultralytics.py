@@ -1,34 +1,17 @@
+from pathlib import Path
 from ultralytics import YOLO
 import yaml
 import argparse
 import torch
 from ultralytics.utils import LOGGER
-import seaborn as sn
-import pandas as pd
-import matplotlib.pyplot as plt
+from confusion_matrix_utils import plot_confusion_matrix, save_interactive_confusion_matrix
 import json
-from pathlib import Path
-
 import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'pdq_evaluation')))
 from read_files import convert_yolo_to_rvc
-
-def plot_confusion_matrix(confusion_matrix, class_names):
-    """Plot confusion matrix using seaborn"""
-    # Get the matrix data and resize it to match the number of classes
-    array = confusion_matrix.matrix
-    n_classes = len(class_names)
-    array = array[:n_classes, :n_classes]  # Take only the relevant classes
-    
-    df_cm = pd.DataFrame(array, index=class_names, columns=class_names)
-    
-    plt.figure(figsize=(10, 7))
-    sn.heatmap(df_cm, annot=True, fmt='g', cmap='Blues')
-    plt.xlabel('Predicted')
-    plt.ylabel('True')
-    plt.title('Confusion Matrix')
-    plt.show()
+from monte_carlo_dropout import save_mc_predictions_to_json
+from data_preparation import data_utils
 
 def save_predictions_to_json(model, data_yaml, conf_thresh, save_path):
     """Save model predictions to JSON in YOLO format"""
@@ -38,27 +21,19 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path):
     with open(data_yaml, 'r') as f:
         data_config = yaml.safe_load(f)
     
-    # Get base path and validation images path
-    base_path = data_config.get('path', '')
-    val_path = data_config.get('val', '')
-    
-    # Try both absolute and relative paths
-    full_val_paths = [
-        Path(base_path) / val_path,
-        Path(val_path),
-        Path(os.path.dirname(data_yaml)) / val_path
-    ]
-    
-    valid_path = next((path for path in full_val_paths if path.exists()), None)
-    if valid_path is None:
-        LOGGER.error("No valid validation path found!")
+    val_path = os.path.join(data_config.get('path', ''), data_config.get('val', ''))
+    if not os.path.exists(val_path):
+        LOGGER.error(f"Invalid validation path: {val_path}")
         return
     
-    # List all image files recursively
+    # Process all images in all subdirectories
     image_files = []
-    for ext in ['*.jpg', '*.jpeg', '*.png']:
-        image_files.extend(list(valid_path.rglob(ext)))
+    for root, _, _ in os.walk(val_path):
+        image_files.extend(data_utils.list_files_of_a_type(root, '.png'))
     
+    # Sort files by path to ensure consistent ordering
+    image_files.sort()
+    maxi = 0
     # Run predictions on validation set
     for img_file in image_files:
         try:
@@ -69,17 +44,29 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path):
             if len(boxes) > 0:
                 for box in boxes:
                     try:
-                        x1, y1, x2, y2 = box.xyxy.cpu().numpy()[0]
-                        conf = float(box.conf.cpu().numpy()[0])
-                        cls_id = int(box.cls.cpu().numpy()[0])
-                        predictions.append([float(x1), float(y1), float(x2), float(y2), conf, cls_id])
+                        xyxy = box.xyxy.cpu().numpy()
+                        x1, y1, x2, y2 = xyxy.reshape(-1)[:4]
+                        conf = float(box.data[0,4].cpu().numpy())
+                        cls_id = int(box.data[0,5].cpu().numpy())
+                        # Get all class confidences
+                        class_confs = box.data[0, 6:].cpu().numpy()  # Skip first 6 values (x1,y1,x2,y2,conf,cls)
+                        
+                        # Create prediction array with box coords, max conf, class id, and all class confidences
+                        pred = {
+                            'boxes': [float(x1), float(y1), float(x2), float(y2)],
+                            'cls_id': cls_id,
+                            'conf': conf,
+                            'class_confs': class_confs.tolist()
+                        }
+                        predictions.append(pred)
                     except Exception as e:
                         LOGGER.warning(f"Error processing box: {e}")
                         continue
             
-            rel_path = str(img_file.relative_to(valid_path))
+            # Use consistent path format
+            rel_path = os.path.basename(str(img_file))
             results_dict[rel_path] = predictions
-            
+            print("maximum", maxi)
         except Exception as e:
             LOGGER.warning(f"Error processing image {img_file}: {e}")
             continue
@@ -94,26 +81,41 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-pt",
-                        help="Path to pretrained model",
-                        default='yolo11n.pt')
+                        help="Path to .pt file",
+                        default='/local/scratch/pz286/dl_histopathology/weights/yolo11n.pt')
     parser.add_argument("-cfg",
                         help="Path to data config file",
                         default='/local/scratch/pz286/dl_histopathology/config/tau_data_test.yaml')
-    parser.add_argument("-conf", 
-                        help='confidence threshold',
-                        default=0.25)
-    parser.add_argument("-iou", 
+    parser.add_argument("-iou",
                         help='iou threshold',
                         default=0.5)
+    parser.add_argument("-conf",
+                        help='confidence threshold',
+                        type=float,
+                        default=0.25)
     parser.add_argument("-save_json",
                         help='Path to save YOLO format predictions JSON',
                         default='predictions_yolo.json')
     parser.add_argument("-save_rvc",
                         help='Path to save RVC format predictions JSON',
                         default='predictions_rvc.json')
-    parser.add_argument("--save_detections", 
+    parser.add_argument("--save_detections",
                         action='store_true',
                         help='Whether to save detection results to JSON files')
+    parser.add_argument("--save_interactive",
+                        help='Path to save interactive HTML confusion matrix',
+                        default='confusion_matrix.html')
+    # Add Monte Carlo Dropout arguments
+    parser.add_argument("--mc_dropout",
+                        action='store_true',
+                        help='Enable Monte Carlo Dropout for uncertainty estimation')
+    parser.add_argument("--num_samples",
+                        type=int,
+                        default=10,
+                        help='Number of Monte Carlo Dropout samples')
+    parser.add_argument("--save_mc_predictions",
+                        help='Path to save Monte Carlo predictions JSON',
+                        default='predictions_mc.json')
 
     args = parser.parse_args()
 
@@ -128,26 +130,47 @@ def main():
     class_names = config['names']
     LOGGER.info(f"Loaded {len(class_names)} classes")
 
-    # Save predictions only if flag is set
+    # Save predictions if requested
     if args.save_detections:
-        LOGGER.info("Saving predictions to JSON files...")
-        save_predictions_to_json(model, args.cfg, float(args.conf), args.save_json)
-        convert_yolo_to_rvc(args.save_json, args.save_rvc, class_names)
-        LOGGER.info("Finished saving predictions")
-    
-    # Run validation and get metrics
-    LOGGER.info("Running validation...")
-    metrics = model.val(data=args.cfg, conf=float(args.conf), iou=float(args.iou))
-    
-    # Print metrics
-    LOGGER.info(f"mAP50-95: {metrics.box.map:.4f}")
-    LOGGER.info(f"mAP50: {metrics.box.map50:.4f}")
-    LOGGER.info(f"mAP75: {metrics.box.map75:.4f}")
-    LOGGER.info(f"Per-class mAP50-95: {metrics.box.maps}")
+        if args.mc_dropout:
+            LOGGER.info("Saving Monte Carlo Dropout predictions...")
+            save_mc_predictions_to_json(
+                model=model,
+                data_yaml=args.cfg,
+                conf_thresh=args.conf,
+                save_path=args.save_mc_predictions,
+                num_samples=args.num_samples,
+                iou_thresh=float(args.iou)
+            )
+            convert_yolo_to_rvc(args.save_mc_predictions, args.save_rvc, class_names)
+            LOGGER.info(f"Saved Monte Carlo predictions to {args.save_mc_predictions}")
+        else:
+            LOGGER.info("Saving standard predictions to JSON files...")
+            save_predictions_to_json(model, args.cfg, args.conf, args.save_json)
+            convert_yolo_to_rvc(args.save_json, args.save_rvc, class_names)
+            LOGGER.info("Finished saving predictions")
 
-    # Plot confusion matrix
-    confusion_matrix = metrics.confusion_matrix
-    plot_confusion_matrix(confusion_matrix, class_names)
+    if args.save_interactive:
+        LOGGER.info("Creating interactive HTML confusion matrix...")
+        save_interactive_confusion_matrix(model, args.cfg, class_names, args.save_interactive)
+    else:
+        # Run validation with specified confidence threshold
+        LOGGER.info(f"Running validation with confidence threshold {args.conf}...")
+        metrics = model.val(
+            data=args.cfg,
+            conf=args.conf,
+            iou=float(args.iou)
+        )
+
+        # Print metrics
+        LOGGER.info(f"mAP50-95: {metrics.box.map:.4f}")
+        LOGGER.info(f"mAP50: {metrics.box.map50:.4f}")
+        LOGGER.info(f"mAP75: {metrics.box.map75:.4f}")
+        LOGGER.info(f"Per-class mAP50-95: {metrics.box.maps}")
+
+        # Plot confusion matrix
+        confusion_matrix = metrics.confusion_matrix
+        plot_confusion_matrix(confusion_matrix, class_names)
 
 if __name__ == "__main__":
     main()

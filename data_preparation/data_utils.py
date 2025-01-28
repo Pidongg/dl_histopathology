@@ -1,7 +1,7 @@
-import glob
 import os
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 import torchvision.transforms.functional as F
 
 
@@ -49,3 +49,35 @@ def show_images(images: list[F.Tensor]):
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
     plt.show()
+
+def cov(x):
+    """Calculate covariance matrix for 2D coordinates."""
+    x_centered = x - torch.mean(x, dim=0)
+    return (x_centered.T @ x_centered) / (x.shape[0] - 1)
+
+def is_pos_semidef(x):
+    """Check if matrix is positive semi-definite."""
+    return np.all(np.linalg.eigvals(x) >= -1e-8)
+
+def get_near_psd(A):
+    """Find the nearest positive semi-definite matrix to input matrix A."""
+    B = (A + A.T) / 2
+    eigval, eigvec = np.linalg.eigh(B)
+    eigval[eigval < 0] = 0
+    return eigvec.dot(np.diag(eigval)).dot(eigvec.T)
+
+def clip_coords(boxes, img_shape):
+    # Clip bounding xyxy bounding boxes to image shape (height, width)
+    boxes[:, 0].clamp_(0, img_shape[1] - 1)  # x1
+    boxes[:, 1].clamp_(0, img_shape[0] - 1)  # y1
+    boxes[:, 2].clamp_(0, img_shape[1] - 1)  # x2
+    boxes[:, 3].clamp_(0, img_shape[0] - 1)  # y2
+
+def xywh2xyxy(x):
+    # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+    y = torch.zeros_like(x) if isinstance(x, torch.Tensor) else np.zeros_like(x)
+    y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
+    y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
+    y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
+    y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+    return y

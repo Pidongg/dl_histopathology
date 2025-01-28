@@ -292,17 +292,19 @@ class LabelPreparer:
                 for class_name, class_stats in class_stats.items():
                     stats_f.write(f"{slide_id},{class_name},{class_stats['kept']},{class_stats['deleted']}\n")
 
-    def filter_files_with_no_labels(self):
+    def filter_files_with_no_labels(self, max=10000):
         """
         Filters out all empty per-tile annotation files and the corresponding tile image files.
         """
+        count = 0
         # Get slide IDs.
-        img_dirs = [f for f in os.listdir(self.root_img_dir) if os.path.isdir(os.path.join(self.root_img_dir, f))]
+        img_dirs = [self.root_img_dir]
+        # img_dirs = [f for f in os.listdir(self.root_img_dir) if os.path.isdir(os.path.join(self.root_img_dir, f))] if os.path.isdir(self.root_img_dir) else [self.root_img_dir]
         print(img_dirs)
         for slide_id in img_dirs:
             print(f"\nProcessing slide {slide_id}...")
             img_dir = os.path.join(self.root_img_dir, slide_id)
-            label_dir = os.path.join(self.out_dir, slide_id)
+            label_dir = os.path.join(self.out_dir, '747297kept')
             print(label_dir)
             label_dir_kept = os.path.join(self.out_dir, slide_id+'kept')   
             if not os.path.exists(label_dir_kept):
@@ -329,9 +331,11 @@ class LabelPreparer:
                         shutil.copy2(tile, img_dir_kept)
                     continue 
 
-                if os.path.getsize(anns_file) != 0:
+                if os.path.getsize(anns_file) != 0 or count >= max:
                     shutil.copy2(tile, img_dir_kept)
                     shutil.copy2(anns_file, label_dir_kept)
+                else:
+                    count += 1
     
     def add_empty_tiles(self, empty_tiles_required: dict[str, int]):
         for slide_id, num_empty_tiles in empty_tiles_required.items():

@@ -1,8 +1,12 @@
-import torch
 import os
+import sys
+# Add project root to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import torch
 import tqdm
 from data_preparation import data_utils, image_labelling
-from .metrics import ObjectDetectionMetrics
+from metrics import ObjectDetectionMetrics
 from abc import abstractmethod
 from torchvision.io import read_image
 from sahi import AutoDetectionModel

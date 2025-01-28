@@ -97,18 +97,18 @@ class v8DetectionLoss:
         # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
         # Modified cls loss calculation
         pred_scores_reshaped = pred_scores.view(-1, self.nc)
-        target_classes = torch.zeros(pred_scores.shape[0] * pred_scores.shape[1], 
-                               dtype=torch.long, 
-                               device=self.device)
+        target_classes = torch.full((pred_scores.shape[0] * pred_scores.shape[1],), 
+                                  fill_value=-1,  # Initialize with -1 for background
+                                  dtype=torch.long, 
+                                  device=self.device)
     
+        # Only compute loss for positive targets (where we have actual objects)
         if fg_mask.any():
-            # Only process positive targets
             positive_indices = fg_mask.view(-1).nonzero().squeeze(1)
             target_classes[positive_indices] = target_scores.view(-1, self.nc)[positive_indices].argmax(dim=1)
             
-            print(target_classes)
-            
-        loss[1] = self.ce(pred_scores_reshaped, target_classes)/target_scores_sum
+        loss[1] = self.ce(pred_scores_reshaped, 
+                        target_classes) / target_scores_sum
 
         # Bbox loss
         if fg_mask.sum():
