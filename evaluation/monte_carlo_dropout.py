@@ -14,7 +14,7 @@ def enable_dropout(model):
         if m.__class__.__name__.startswith('Dropout'):
             m.train()
 
-def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30):
+def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30, is_yolo=False):
     """
     Perform multiple forward passes with dropout enabled.
     Returns raw model outputs before NMS.
@@ -27,7 +27,8 @@ def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30)
         for _ in range(num_samples):
             # Enable dropout and set to eval mode
             model.eval()
-            enable_dropout(model)
+            if is_yolo:
+                enable_dropout(model)
 
             # Get raw model output (before NMS)
             preds = model.predict(str(img), conf=conf_thresh, skip_nms=True)[0]

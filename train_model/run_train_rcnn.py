@@ -49,7 +49,8 @@ def select_best_gpus(num_gpus=1):
     gpus.sort(key=lambda x: (x['utilization'], x['memory_used']))
     
     # Select the top N least utilized GPUs
-    selected_gpus = gpus[:num_gpus]
+    # selected_gpus = gpus[:num_gpus]
+    selected_gpus = [3]
     return ','.join(str(gpu['index']) for gpu in selected_gpus)
 
 def collate_fn(batch):
@@ -120,11 +121,19 @@ def get_valid_transform():
     })
 
 
-def get_model_instance_segmentation(num_classes):
+def get_model_instance_segmentation(num_classes, stochastic=False, all_scores=False, skip_nms=False):
     # load an instance segmentation model pre-trained on COCO
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(
         weights="DEFAULT")
-
+    if all_scores:
+        r = model.roi_heads
+        new_roi_heads = torchvision.models.detection.roi_heads.RoIHeadsWithScores(r.box_roi_pool, r.box_head, r.box_predictor, 
+            r.proposal_matcher.high_threshold, r.proposal_matcher.low_threshold, 
+            r.fg_bg_sampler.batch_size_per_image, r.fg_bg_sampler.positive_fraction,
+            r.box_coder.weights, r.score_thresh, r.nms_thresh, r.detections_per_img,
+            r.mask_roi_pool, r.mask_head, r.mask_predictor,
+            r.keypoint_roi_pool, r.keypoint_head, r.keypoint_predictor, skip_nms)
+        model.roi_heads = new_roi_heads
     # Add dropout layers before the last 2 conv layers in the box head
     box_head = model.roi_heads.box_head
     layers = list(box_head.children())
@@ -135,7 +144,7 @@ def get_model_instance_segmentation(num_classes):
     
     for i, layer in enumerate(layers):
         # Add dropout before the last 2 Conv2dNormActivation modules
-        if isinstance(layer, torchvision.ops.misc.Conv2dNormActivation) and i >= len(layers) - 5:
+        if isinstance(layer, torchvision.ops.misc.Conv2dNormActivation) and i >= len(layers) - 5 and stochastic:
             new_layers.append(torch.nn.Dropout2d(p=dropout_rate))
         new_layers.append(layer)
     
@@ -151,46 +160,52 @@ def get_model_instance_segmentation(num_classes):
 
 
 def train_one_epoch(model, optimizer, data_loader, device):
+    """
+    Written with reference to https://debuggercafe.com/custom-object-detection-using-pytorch-faster-rcnn/
+    Function for running training iterations
+    """
     model.train()
     epoch_loss = 0
     print('Training')
-    
+
+    # initialize tqdm progress bar
     prog_bar = tqdm.tqdm(data_loader, total=len(data_loader))
-    
-    optimizer.zero_grad()
-    accumulation_steps = 4  # Accumulate gradients to simulate larger batch size
-    
+
     for i, (images, targets) in enumerate(prog_bar):
+        optimizer.zero_grad()
+
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-        loss_dict = model(images, targets)
+        loss_dict = model(images, targets)  # r-cnn gives back loss values?
         losses = sum(loss for loss in loss_dict.values())
         loss_value = losses.item()
         epoch_loss += loss_value
 
-        # Normalize loss for gradient accumulation
-        losses = losses / accumulation_steps
         losses.backward()
+        optimizer.step()
 
-        if (i + 1) % accumulation_steps == 0:
-            optimizer.step()
-            optimizer.zero_grad()
-
-        prog_bar.set_description(f'Loss: {loss_value:.4f}')
+        # update the loss value beside the progress bar for each iteration
+        prog_bar.set_description(desc=f"Loss: {loss_value:.4f}")
 
     return epoch_loss / len(data_loader)
 
 
 def validate(model, data_loader, device):
-    model.train()  # Keep in train mode to get losses
+    """
+    Function for evaluating performance on the validation set at each epoch
+    """
+#     model.eval() # commenting this out so we can get the loss
     epoch_loss = 0
     print('Validating')
 
+    # initialize tqdm progress bar
     prog_bar = tqdm.tqdm(data_loader, total=len(data_loader))
 
     with torch.no_grad():
         for i, (images, targets) in enumerate(prog_bar):
+            optimizer.zero_grad()
+
             images = list(image.to(device) for image in images)
             targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
@@ -199,7 +214,8 @@ def validate(model, data_loader, device):
             loss_value = losses.item()
             epoch_loss += loss_value
 
-            prog_bar.set_description(f'Loss: {loss_value:.4f}')
+            # update the loss value beside the progress bar for each iteration
+            prog_bar.set_description(desc=f"Loss: {loss_value:.4f}")
 
     return epoch_loss / len(data_loader)
 
@@ -219,31 +235,19 @@ if __name__ == "__main__":
 
     parser.add_argument("num_epochs", type=int,
                         help="Number of epochs to train for")
-                        
-    parser.add_argument("-n", "--num_gpus",
-                        help="Number of GPUs to use",
-                        type=int,
-                        default=1)
+    parser.add_argument("--stochastic", action="store_true", help="Use stochastic dropout", default=False)
 
     args = parser.parse_args()
-
-    # Select best GPUs and set CUDA_VISIBLE_DEVICES
-    best_gpus = select_best_gpus(args.num_gpus)
-    os.environ['CUDA_VISIBLE_DEVICES'] = best_gpus
-    print(f"Using GPU(s): {best_gpus}")
-
-    # If using multiple GPUs, wrap the model in DataParallel
-    if args.num_gpus > 1:
-        device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    else:
-        device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-
-    print("Using device:", device)
 
     cfg = args.cfg
     OUT_MODEL_DIR = args.model_save_dir
     model_name = args.model_name
     num_epochs = args.num_epochs
+
+    # train on the GPU or on the CPU, if a GPU is not available
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+    print("using device: ", device)
 
     if not os.path.exists(OUT_MODEL_DIR):
         os.makedirs(OUT_MODEL_DIR)
@@ -285,55 +289,32 @@ if __name__ == "__main__":
                                 label_dir=label_val_dir,
                                 width=512,
                                 height=512,
-                                transforms=get_valid_transform(),
+                                transforms=get_train_transform(),
                                 device=device)
-    
-    print(f"\nDataset information:")
-    print(f"Training dataset size: {len(dataset)}")
-    print(f"Validation dataset size: {len(dataset_valid)}")
 
-    def get_num_workers():
-        """Get appropriate number of workers based on system"""
-        num_cpus = os.cpu_count()
-        if num_cpus is None:
-            return 0
-        # Usually 0 workers for CPU training, num_cpus for GPU
-        return min(4, num_cpus) if torch.cuda.is_available() else 0
-
-    # Adjust batch size based on number of GPUs
-    base_batch_size = 4
-    batch_size = base_batch_size * args.num_gpus
-
-    # Update data loaders with new batch size
+    # define training and validation data loaders
     data_loader_train = DataLoader(
         dataset,
-        batch_size=batch_size,
+        batch_size=4,
         shuffle=True,
-        num_workers=get_num_workers(),
-        collate_fn=collate_fn,
-        pin_memory=False,
-        persistent_workers=True
+        num_workers=4,
+        collate_fn=collate_fn
     )
 
     data_loader_valid = DataLoader(
         dataset_valid,
-        batch_size=batch_size,
+        batch_size=4,
         shuffle=False,
-        num_workers=get_num_workers(),
-        collate_fn=collate_fn,
-        pin_memory=False,
-        persistent_workers=True
+        num_workers=4,
+        collate_fn=collate_fn
     )
 
     # get the model using our helper function
-    model = get_model_instance_segmentation(num_classes)
-    print(model.roi_heads.box_head)
-    
-    # Wrap model in DataParallel if using multiple GPUs
-    if args.num_gpus > 1 and torch.cuda.device_count() > 1:
-        print(f"Using {torch.cuda.device_count()} GPUs!")
-        model = torch.nn.DataParallel(model)
-    
+    model = get_model_instance_segmentation(num_classes, stochastic=args.stochastic)
+
+    # model.load_state_dict(torch.load("models/RCNN/Tau/rcnn_tau_4.pth"))
+
+    # move model to the right device
     model.to(device)
 
     # construct an optimizer
@@ -352,7 +333,7 @@ if __name__ == "__main__":
         gamma=0.1
     )
 
-    # save the state dict of the model with the lowest loss on the validation step
+    # save the state dict of the model with the lowest loss on the validation step throughout training
     best_valid_loss = float('inf')
     best_model_state_dict = None
 
@@ -362,7 +343,6 @@ if __name__ == "__main__":
 
     for epoch in range(num_epochs):
         print(f"\nEPOCH {epoch + 1} of {num_epochs}")
-        
         # train for one epoch
         train_loss = train_one_epoch(model, optimizer, data_loader_train, device=device)
         print(f"Training loss: {train_loss}")
@@ -372,7 +352,9 @@ if __name__ == "__main__":
         lr_scheduler.step()
 
         # save the model
+        # get a file path not already in use that also uses the filename
         model_path = get_unused_filename(OUT_MODEL_DIR, model_name, ".pth")
+
         torch.save(model.state_dict(), model_path)
 
         # evaluate on the validation dataset
@@ -384,7 +366,11 @@ if __name__ == "__main__":
             best_valid_loss = valid_loss
             best_model_state_dict = model.state_dict()
 
-    # after all epochs, save the model with the best performance
-    model_path = get_unused_filename(OUT_MODEL_DIR, "best_model", ".pth")
+    # after all epochs have been completed, save the model with the best performance
+    model_name = "best_model"
+
+    # get a file path not already in use that also uses the filename
+    model_path = get_unused_filename(OUT_MODEL_DIR, model_name, ".pth")
+
     torch.save(best_model_state_dict, model_path)
     # TODO: visualize the training and validation losses, and make it per class

@@ -312,11 +312,14 @@ class ObjectDetectionMetrics:
     def get_confusion_matrix(self, conf_threshold, all_iou=False, prefix="", plot=False):
         """
         Returns a confusion matrix with predicted class as row index, and gt class as col index.
+        Matches Ultralytics' implementation.
 
         Args:
-            conf_threshold
+            conf_threshold: Confidence threshold for predictions
             all_iou (bool): Indicates whether to compute confusion matrices for all iou thresholds. If false,
                 just compute for IOU=0.5.
+            prefix (str): Prefix for saved plot filename
+            plot (bool): Whether to save confusion matrix plot
         """
         t = self.iou_threshold.shape[0]
 
@@ -328,41 +331,78 @@ class ObjectDetectionMetrics:
         matrix = torch.zeros((len(iou_thresholds), self.num_classes + 1, self.num_classes + 1), dtype=torch.int32)
 
         for ti in iou_thresholds:
-            gt_per_pred_all = self.gt_per_pred_all[ti]
-            pred_per_gt_all = self.pred_per_gt_all[ti]
+            iou_threshold = self.iou_threshold[ti]
+            
+            # Process each image's detections and ground truths
+            for i in range(len(self.detections)):
+                pred = self.detections[i]
+                gt = self.ground_truths[i]
+                
+                # Filter by confidence
+                pred = pred[pred[:, 4] >= conf_threshold]
+                
+                if gt.shape[0] == 0:  # No ground truth labels
+                    if pred.shape[0] > 0:
+                        for pc in pred[:, 5].int():
+                            matrix[ti, pc, self.num_classes] += 1  # background FP
+                    continue
 
-            # filter by confidence
-            # first update gt_per_pred_all to remove the unused predictions
-            gt_per_pred_all = gt_per_pred_all[self.conf >= conf_threshold]
+                if pred.shape[0] == 0:  # No predictions
+                    for gc in gt[:, -1].int():
+                        matrix[ti, self.num_classes, gc] += 1  # background FN
+                    continue
 
-            # then update pred_per_gt_all to remove invalid predictions
-            pred_per_gt_all[self.conf[pred_per_gt_all] < conf_threshold] = -1
+                # Calculate IoU between predictions and ground truths
+                iou = box_iou(pred[:, :4], gt[:, :4])
+                
+                # Find matches above IoU threshold
+                matches = torch.nonzero(iou >= iou_threshold)
+                if matches.shape[0] > 0:
+                    if matches.shape[0] > 1:
+                        # Add IoU values to matches
+                        matches = torch.cat((matches, iou[matches[:, 0], matches[:, 1]].unsqueeze(1)), 1)
+                        
+                        # Sort matches by IoU score
+                        matches = matches[matches[:, 2].argsort(descending=True)]
+                        
+                        # Remove duplicate predictions and ground truths
+                        unique_pred_idx = torch.unique(matches[:, 1].long(), return_inverse=True)[1]
+                        matches = matches[unique_pred_idx]
+                        
+                        unique_gt_idx = torch.unique(matches[:, 0].long(), return_inverse=True)[1]
+                        matches = matches[unique_gt_idx]
 
-            # filter detection classes
-            detection_cls = self.pred_cls[self.conf >= conf_threshold]
+                        # Convert matches back to the correct type if needed
+                        matches = matches.long()
 
-            # objects wrongly predicted as background:
-            # find labels that don't correspond to any preds.
-            unmatched_labels_idx = torch.where(pred_per_gt_all == -1)[0]
+                    # Get predicted and ground truth classes for matched boxes
+                    pred_cls = pred[matches[:, 0], 5].int()
+                    gt_cls = gt[matches[:, 1], -1].int()
+                    
+                    # Process each prediction-ground truth pair
+                    for pc, gc in zip(pred_cls, gt_cls):
+                        if pc == gc:  # Correct classification
+                            matrix[ti, pc, gc] += 1
+                        else:  # Misclassification
+                            matrix[ti, pc, gc] += 1  # Add to confusion matrix at predicted vs actual position
 
-            class_idxs = sorted(list(self.idx_to_name.keys()))
-
-            # note that there is no matrix[0, 0] as there is an infinite number of background boxes...
-            for i, c in enumerate(class_idxs):
-                num_unpredicted = sum(self.gt_cls[unmatched_labels_idx] == c)
-                matrix[ti, 0, i + 1] = num_unpredicted
-
-            for i, c in enumerate(class_idxs):
-                di = detection_cls == c
-
-                matched_labels_idx = gt_per_pred_all[di].int()
-
-                # matched_classes: the ground truth class of each prediction.
-                matched_classes = self.gt_cls[matched_labels_idx].detach() + 1  # increment to allow for background class.
-                matched_classes[matched_labels_idx == -1] = 0  # background class, i.e. no gt matches.
-
-                for j, cj in enumerate([-1] + class_idxs):
-                    matrix[ti, i + 1, j] = sum(matched_classes == cj + 1)
+                    # Add remaining unmatched predictions as false positives
+                    unmatched_preds = set(range(pred.shape[0])) - set(matches[:, 0].cpu().numpy())
+                    for idx in unmatched_preds:
+                        pc = pred[idx, 5].int()
+                        matrix[ti, pc, self.num_classes] += 1  # false positive
+                    
+                    # Add remaining unmatched ground truths as false negatives
+                    unmatched_gts = set(range(gt.shape[0])) - set(matches[:, 1].cpu().numpy())
+                    for idx in unmatched_gts:
+                        gc = gt[idx, -1].int()
+                        matrix[ti, self.num_classes, gc] += 1  # false negative
+                else:
+                    # No matches - all predictions are FP and all ground truths are FN
+                    for pc in pred[:, 5].int():
+                        matrix[ti, pc, self.num_classes] += 1
+                    for gc in gt[:, -1].int():
+                        matrix[ti, self.num_classes, gc] += 1
 
         if plot:
             # The following code is adapted from
@@ -516,5 +556,8 @@ class ObjectDetectionMetrics:
             self.ap_per_class(plot=False)
 
         return self.ap.mean(dim=-1).mean()
+
+# Make sure to export the class at the end of the file
+__all__ = ['ObjectDetectionMetrics']
 
 

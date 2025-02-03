@@ -10,6 +10,24 @@ from data_preparation import data_utils
 import argparse
 import yaml
 import train_model.run_train_rcnn as run_train_rcnn
+# Add new import for GPU monitoring
+import subprocess
+import numpy as np
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'pdq_evaluation')))
+from read_files import convert_yolo_to_rvc
+
+def get_gpu_memory_usage():
+    """
+    Get the current memory usage for all available GPUs
+    Returns list of memory usage for each GPU in MB
+    """
+    try:
+        output = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used', '--format=csv,nounits,noheader'])
+        memory_used = [int(x) for x in output.decode('utf-8').strip().split('\n')]
+        return memory_used
+    except:
+        return []
 
 def main():
     parser = argparse.ArgumentParser()
@@ -29,6 +47,9 @@ def main():
                         help="Path to test set label directory")
     parser.add_argument("-name",
                         help="(Optional) Identifier to prefix any output plots with")
+    parser.add_argument("--save_predictions", action="store_true", help="Save predictions to a file", default=False)
+    parser.add_argument("--save_predictions_path", help="Name of the file to save predictions to", default="model_rcnn_yolo.json")
+    parser.add_argument("--save_rvc", help="Name of the file to save RVC predictions to", default="model_rcnn_rvc.json")
     
     # Add after other parser arguments
     parser.add_argument("-sahi", action="store_true",
@@ -40,6 +61,29 @@ def main():
     parser.add_argument("--overlap_ratio", type=float,
                         help="Overlap ratio for SAHI tiled inference",
                         default=0.2)
+    parser.add_argument("--stochastic", action="store_true",
+                        help="Use stochastic architecture for R-CNN",
+                        default=False)
+    parser.add_argument("--mc_dropout",
+                        action='store_true',
+                        help='Enable Monte Carlo Dropout for uncertainty estimation')
+    parser.add_argument("--num_samples",
+                        type=int,
+                        default=10,
+                        help='Number of Monte Carlo Dropout samples')
+    parser.add_argument("--save_mc_predictions",
+                        help='Path to save Monte Carlo predictions JSON',
+                        default='predictions_mc.json')
+    parser.add_argument("-iou",
+                        help='iou threshold',
+                        default=0.5)
+    parser.add_argument("-conf",
+                        help='confidence threshold',
+                        type=float,
+                        default=0.25)
+    parser.add_argument("-save_rvc",
+                        help='Path to save RVC predictions JSON',
+                        default='predictions_rvc.json')
     args = parser.parse_args()
 
     model_path = args.model
@@ -48,6 +92,7 @@ def main():
     test_images = args.test_set_images
     test_labels = args.test_set_labels
     prefix = args.name
+    stochastic = args.stochastic
 
     # Get list of all test images and labels
     test_images = data_utils.list_files_of_a_type(test_images, ".png", recursive=True)
@@ -70,11 +115,10 @@ def main():
         print("Only one flag among -yolo and -rcnn may be set to true when running evaluation.")
         return
 
-    device = (torch.device(f'cuda:{torch.cuda.current_device()}')
-              if torch.cuda.is_available()
-              else 'cpu')
-
+    # Set device consistently
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     torch.set_default_device(device)
+    print(f"\nUsing device: {device}")
 
     # get class dictionary
     with open(cfg, "r") as stream:
@@ -102,8 +146,8 @@ def main():
                                         device=device,
                                         class_dict=class_dict,
                                         save_dir=save_dir,
-                                    slice_size=args.slice_size,
-                                    overlap_ratio=args.overlap_ratio)
+                                        slice_size=args.slice_size,
+                                        overlap_ratio=args.overlap_ratio)
         else:
             evaluator = YoloEvaluator(model,
                                     test_imgs=test_images,
@@ -113,18 +157,30 @@ def main():
                                     save_dir=save_dir)  
 
     elif args.rcnn:
-        # load model
         num_classes = len(class_dict) + 1
-        model = run_train_rcnn.get_model_instance_segmentation(num_classes)
-        model.load_state_dict(torch.load(model_path))
+        model = run_train_rcnn.get_model_instance_segmentation(num_classes, stochastic=stochastic, all_scores=True, skip_nms=True)
+        
+        # Load state dict to the correct device
+        state_dict = torch.load(model_path, map_location=device)
+        model.load_state_dict(state_dict)
         model.to(device)
+        
+        save_predictions = args.save_predictions
 
         evaluator = RCNNEvaluator(model,
                                   test_imgs=test_images,
                                   test_labels=test_labels,
                                   device=device,
                                   class_dict=class_dict,
-                                  save_dir=save_dir)
+                                  save_dir=save_dir,
+                                  save_predictions=args.save_predictions,
+                                  mc_dropout=args.mc_dropout,
+                                  num_samples=args.num_samples,
+                                  iou_thresh=args.iou,
+                                  conf_thresh=args.conf,
+                                  save_predictions_path=args.save_predictions_path,
+                                  save_rvc=args.save_rvc,
+                                  data_yaml=cfg)
 
     evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
 

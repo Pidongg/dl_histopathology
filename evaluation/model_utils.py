@@ -12,6 +12,12 @@ def xywh2xyxy(x):
     y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
     return y
 
+def enable_dropout(model):
+    """Enable dropout layers during test-time."""
+    for m in model.modules():
+        if m.__class__.__name__.startswith('Dropout'):
+            m.train()
+
 def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=False, max_width=2000, max_height=2000, get_unknowns=False,
                         classes=None, agnostic=False):
     """

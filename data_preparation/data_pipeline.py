@@ -205,7 +205,7 @@ def visualize_boundary_objects(root_dir, img_dir, label_dir):
 
 # Usage
 root_dir = "M:/Unused/TauCellDL"
-img_dir = "images/test"
-label_dir = "labels/test"
+img_dir = "images/test/747331"
+label_dir = "labels/test/747331"
 
 visualize_boundary_objects(root_dir, img_dir, label_dir)

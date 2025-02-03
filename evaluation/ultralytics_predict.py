@@ -26,11 +26,13 @@ class DetectionPredictor(BasePredictor):
 
     def postprocess(self, preds, img, orig_imgs):
         """Post-processes predictions and returns a list of Results objects."""
+
         if self.args.skip_nms:
             # Return raw predictions without NMS
-            for pred in preds:
+            for pred, orig_img in zip(preds, orig_imgs):
                 pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
             return preds
+
         preds = ops.non_max_suppression(
             preds,
             self.args.conf,
