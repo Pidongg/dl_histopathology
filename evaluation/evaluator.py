@@ -1,6 +1,5 @@
 import os
 import sys
-# Add project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
@@ -15,6 +14,8 @@ import json
 from model_utils import enable_dropout, non_max_suppression
 from pdq_evaluation.read_files import convert_yolo_to_rvc, LOGGER
 import yaml
+from torchvision.transforms import v2 as T
+
 
 class Evaluator:
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir, save_predictions=False, mc_dropout=False, num_samples=30, iou_thresh=0.6, conf_thresh=0.25, save_predictions_path=None, save_rvc=None, data_yaml=None):
@@ -328,7 +329,6 @@ class RCNNEvaluator(Evaluator):
         super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir, save_predictions, mc_dropout, num_samples, iou_thresh, conf_thresh, save_predictions_path, save_rvc, data_yaml)
 
     def infer_for_one_img(self, img_path):
-        from torchvision.transforms import v2 as T
 
         self.model.eval()
         print(f"\nProcessing image: {img_path}")

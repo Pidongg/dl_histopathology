@@ -10,12 +10,8 @@ from data_preparation import data_utils
 import argparse
 import yaml
 import train_model.run_train_rcnn as run_train_rcnn
-# Add new import for GPU monitoring
 import subprocess
-import numpy as np
-import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'pdq_evaluation')))
-from read_files import convert_yolo_to_rvc
 
 def get_gpu_memory_usage():
     """
