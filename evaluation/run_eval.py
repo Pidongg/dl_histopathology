@@ -45,7 +45,7 @@ def main():
                         help="(Optional) Identifier to prefix any output plots with")
     parser.add_argument("--save_predictions", action="store_true", help="Save predictions to a file", default=False)
     parser.add_argument("--save_predictions_path", help="Name of the file to save predictions to", default="model_rcnn_yolo.json")
-    parser.add_argument("--save_rvc", help="Name of the file to save RVC predictions to", default="model_rcnn_rvc.json")
+    parser.add_argument("--save_rvc", help="Path to save RVC predictions to", default="model_rcnn_rvc.json")
     
     # Add after other parser arguments
     parser.add_argument("-sahi", action="store_true",
@@ -60,16 +60,10 @@ def main():
     parser.add_argument("--stochastic", action="store_true",
                         help="Use stochastic architecture for R-CNN",
                         default=False)
-    parser.add_argument("--mc_dropout",
-                        action='store_true',
-                        help='Enable Monte Carlo Dropout for uncertainty estimation')
     parser.add_argument("--num_samples",
                         type=int,
                         default=10,
                         help='Number of Monte Carlo Dropout samples')
-    parser.add_argument("--save_mc_predictions",
-                        help='Path to save Monte Carlo predictions JSON',
-                        default='predictions_mc.json')
     parser.add_argument("-iou",
                         help='iou threshold',
                         default=0.5)
@@ -77,9 +71,7 @@ def main():
                         help='confidence threshold',
                         type=float,
                         default=0.25)
-    parser.add_argument("-save_rvc",
-                        help='Path to save RVC predictions JSON',
-                        default='predictions_rvc.json')
+    parser.add_argument("--dropout_rate", type=float, help="Dropout rate", default=0.5)
     args = parser.parse_args()
 
     model_path = args.model
@@ -112,7 +104,7 @@ def main():
         return
 
     # Set device consistently
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     torch.set_default_device(device)
     print(f"\nUsing device: {device}")
 
@@ -154,15 +146,18 @@ def main():
 
     elif args.rcnn:
         num_classes = len(class_dict) + 1
-        model = run_train_rcnn.get_model_instance_segmentation(num_classes, stochastic=stochastic, all_scores=True, skip_nms=True)
+        model = run_train_rcnn.get_model_instance_segmentation(num_classes, stochastic=stochastic, all_scores=True, skip_nms=stochastic, conf_thresh=float(args.conf), iou_thresh=float(args.iou), dropout_rate=float(args.dropout_rate))
         
         # Load state dict to the correct device
         state_dict = torch.load(model_path, map_location=device)
         model.load_state_dict(state_dict)
         model.to(device)
-        
-        save_predictions = args.save_predictions
 
+        # Force clear any previous output files
+        if args.save_predictions and os.path.exists(args.save_predictions_path):
+            os.remove(args.save_predictions_path)
+        if args.save_rvc and os.path.exists(args.save_rvc):
+            os.remove(args.save_rvc)
         evaluator = RCNNEvaluator(model,
                                   test_imgs=test_images,
                                   test_labels=test_labels,
@@ -170,16 +165,17 @@ def main():
                                   class_dict=class_dict,
                                   save_dir=save_dir,
                                   save_predictions=args.save_predictions,
-                                  mc_dropout=args.mc_dropout,
+                                  mc_dropout=stochastic,
                                   num_samples=args.num_samples,
-                                  iou_thresh=args.iou,
-                                  conf_thresh=args.conf,
+                                  iou_thresh=float(args.iou),
+                                  conf_thresh=float(args.conf),
                                   save_predictions_path=args.save_predictions_path,
                                   save_rvc=args.save_rvc,
                                   data_yaml=cfg)
+        
 
-    evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
-
+    ap = evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
+    print("AP per class:", ap)
     matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True, prefix=prefix)
     print(matrix)
     matrix = evaluator.confusion_matrix(conf_threshold=0.0, all_iou=False, plot=True, prefix=prefix)

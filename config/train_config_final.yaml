@@ -1,11 +1,11 @@
 data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
-epochs: 300
+epochs: 200
 optimizer: 'AdamW'
 plots: True
 val: True
 batch: -1
 
-weight_decay: 0.0001
+weight_decay: 0.0005
 
 lr0: 0.001
 lrf: 0.01

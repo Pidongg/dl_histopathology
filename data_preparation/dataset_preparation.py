@@ -342,7 +342,8 @@ class TauPreparer(DataPreparer):
             'CB': 1,
             'NFT': 2,
             'Others': 3,
-            'coiled': 1
+            'coiled': 1,
+            'tau_fragments': 3
         }
         self.empty_tiles_required = empty_tiles_required
         self.with_segmentation = with_segmentation
@@ -374,11 +375,11 @@ class TauPreparer(DataPreparer):
 
         # print("\nSeparating labels by tile for each slide...")
         # # label_preparer.separate_tiles_with_cut_log()
-        # # label_preparer.generate_cut_log_per_tile_with_length_threshold(length_threshold=25, tile_number=747297)
-        # label_preparer.separate_labels_by_tile(length_threshold=16)
+        # label_preparer.generate_cut_log_per_tile(area_thresholds=[0.1, 0.225, 0.1, 0.3], length_threshold=16)
+        # label_preparer.separate_labels_by_tile(area_thresholds=[0.1, 0.225, 0.195, 0.4], length_threshold=16)
 
         # print("\nDeleting images/labels with empty label files...")
-        label_preparer.filter_files_with_no_labels(50)
+        label_preparer.filter_files_with_no_labels(inplace=False)
 
         # if self.empty_tiles_required is not None:
         #     label_preparer.add_empty_tiles(self.empty_tiles_required)

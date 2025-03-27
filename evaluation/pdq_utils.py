@@ -125,7 +125,7 @@ def visualize_segmentation(image_path, segmentation_mask, bbox, save_path=None):
     
     Args:
         image_path (str): Path to original image
-        segmentation_mask (np.ndarray): Binary segmentation mask. should be same size as bounding box.
+        segmentation_mask (np.ndarray): Binary segmentation mask
         bbox (list): [x0, y0, x1, y1] coordinates
         save_path (str, optional): Path to save visualization
     """
@@ -148,29 +148,30 @@ def visualize_segmentation(image_path, segmentation_mask, bbox, save_path=None):
     # Convert bbox coordinates to integers
     x0, y0, x1, y1 = map(int, bbox)
     
-    # Create mask overlay (red color)
+    # Extract region from image
+    region = image[y0:y1, x0:x1]
+    
+    # Crop segmentation mask to match region size
+    mask_cropped = segmentation_mask[y0:y1, x0:x1]
+    
+    # Create red overlay for the region
+    mask_overlay = np.zeros_like(region)
+    mask_overlay[mask_cropped > 0] = [255, 0, 0]  # Red color for mask
+    
     try:
-        mask_region = overlay[y0:y1, x0:x1]
-        mask_overlay = np.zeros_like(mask_region)
-        
-        # Ensure segmentation mask matches the region size
-        if segmentation_mask.shape != mask_region.shape[:2]:
-            print(f"Warning: Segmentation mask shape {segmentation_mask.shape} doesn't match region shape {mask_region.shape[:2]}")
-            return
-            
-        mask_overlay[segmentation_mask > 0] = [255, 0, 0]  # Red color for mask
-        
-        # Blend mask with image using cv2.addWeighted
-        cv2.addWeighted(
-            mask_region,
+        # Blend mask with region
+        region_overlay = cv2.addWeighted(
+            region,
             0.5,  # alpha
             mask_overlay,
             0.5,  # beta = 1-alpha
-            0,    # gamma
-            dst=mask_region
+            0     # gamma
         )
-    except IndexError as e:
-        print(f"Warning: Could not overlay mask. Bbox coordinates [{x0}, {y0}, {x1}, {y1}] may be out of bounds for image shape {image.shape}")
+        
+        # Place the overlay back into the full image
+        overlay[y0:y1, x0:x1] = region_overlay
+    except Exception as e:
+        print(f"Warning: Segmentation mask shape {segmentation_mask.shape} doesn't match region shape {region.shape}")
         return
     
     # Draw bounding box

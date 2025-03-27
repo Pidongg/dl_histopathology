@@ -19,7 +19,7 @@ def enable_dropout(model):
             m.train()
 
 def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=False, max_width=2000, max_height=2000, get_unknowns=False,
-                        classes=None, agnostic=False):
+                        classes=None, agnostic=False, use_xyxy_format=False):
     """
     Performs  Non-Maximum Suppression on inference results
     Returns detections with shape:
@@ -74,7 +74,11 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=F
                 continue
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
-        box = xywh2xyxy(x_all[:, 0, :4])
+        if not use_xyxy_format:
+            box = xywh2xyxy(x_all[:, 0, :4])
+        else:
+            # If already in xyxy format, just use as is
+            box = x_all[:, 0, :4]
 
         # Removing bboxes out of image limits
         wrong_bboxes = (box < 0).any(1) | (box[:, [0, 2]] >= max_width).any(1) | (box[:, [1, 3]] >= max_height).any(1)

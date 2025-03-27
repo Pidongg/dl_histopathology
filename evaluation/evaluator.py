@@ -32,8 +32,10 @@ class Evaluator:
         # If test_imgs/test_labels are already lists of files, use them directly
         self.test_imgs = (test_imgs if isinstance(test_imgs, list) 
                          else data_utils.list_files_of_a_type(test_imgs, ".png", recursive=True))
+        self.test_imgs.sort()
         self.test_labels = (test_labels if isinstance(test_labels, list) 
                           else data_utils.list_files_of_a_type(test_labels, ".txt", recursive=True))
+        self.test_labels.sort()
         self.device = device
         self.class_dict = class_dict
         self.save_dir = save_dir
@@ -131,18 +133,36 @@ class Evaluator:
         Returns raw model outputs before NMS.
         """
         infs_all = []
-        num_classes = 4 
+        num_classes = 4  # RVC format: 4 classes (not including background)
+
         # Perform multiple forward passes
         with torch.no_grad():
             for _ in range(num_samples):
-                # Get raw model output (before NMS)
+                # Get raw model output
                 ground_truths, predictions = self.infer_for_one_img(img)
+                if isinstance(predictions, list):
+                    predictions = predictions[0]
+                # For RCNN predictions, extract boxes, scores, and labels
+                # if isinstance(predictions, dict):
+                #     i = predictions['labels'] != 0  # indices of non-background class predictions
+                #     boxes = predictions['boxes'][i]
+                #     scores = predictions['scores'][i]
+                #     labels = predictions['labels'][i] - 1  # Adjust class indices
+                    
+                #     # Create scores tensor for all classes
+                #     class_scores = torch.zeros((len(boxes), num_classes), device=boxes.device)
+                #     if 'scores_dist' in predictions:
+                #         # If we have distribution scores, use them (excluding background class)
+                #         class_scores = predictions['scores_dist'][i, 1:]  # Skip background class
+                #     else:
+                #         # Otherwise, put the score in the predicted class column
+                #         class_scores[range(len(boxes)), labels] = scores
+                    
+                #     # Combine boxes and class scores: (N, 8) where 8 = 4 box coords + 4 class scores
+                #     predictions = torch.cat([boxes, class_scores], dim=1)
+                #     predictions = predictions.unsqueeze(0)  # Add batch dimension
                 
-                # nms requires preds to change from (batch_size, num_classes + 4 + num_masks, num_boxes) to (batch_size, num_boxes, num_classes + 4)
-                # preds = predictions[:, :num_classes+4, :]
-                preds = predictions
-                # preds = preds.transpose(-2, -1)
-                infs_all.append(preds.unsqueeze(2))
+                infs_all.append(predictions.unsqueeze(2))
             
             if num_samples > 1:
                 inf_mean = torch.mean(torch.stack(infs_all), dim=0)
@@ -150,30 +170,35 @@ class Evaluator:
                 inf_out = torch.cat(infs_all, dim=2)
             else:
                 inf_out = infs_all[0]
-            
+
             # Apply NMS and get sampled coordinates
             output, all_scores, sampled_coords = non_max_suppression(
                 inf_out,
                 conf_thres=conf_thresh,
                 iou_thres=iou_thresh,
                 multi_label=False,
-                max_width=512,
-                max_height=512
+                max_width=800,
+                max_height=800
             )
+            image_width = 512  # Or get actual image dimensions
+            scale_factor = image_width / 800
+
             # Process sampled coordinates if we have multiple samples
             if num_samples > 1 and output[0] is not None and len(output[0]) > 0:
                 # Use fixed dimensions
                 height, width = 512, 512
+                output[0][:, :4] *= scale_factor
                 
                 # Process sampled coordinates for the first (and only) image in batch
                 sampled_boxes = data_utils.xywh2xyxy(sampled_coords[0].reshape(-1, 4)).reshape(sampled_coords[0].shape)
+                sampled_boxes *= scale_factor
                 data_utils.clip_coords(sampled_boxes.reshape(-1, 4), (height, width))
-                
+
                 # Calculate covariances for each detection
                 covariances = torch.zeros(sampled_boxes.shape[0], 2, 2, 2, device=output[0].device)
                 for det_idx in range(sampled_boxes.shape[0]):
-                    covariances[det_idx, 0, ...] = data_utils.cov(sampled_boxes[det_idx, :, :2])
-                    covariances[det_idx, 1, ...] = data_utils.cov(sampled_boxes[det_idx, :, 2:])
+                    covariances[det_idx, 0, ...] = data_utils.cov(sampled_boxes[det_idx, :, :2]) # covariance of top left corner
+                    covariances[det_idx, 1, ...] = data_utils.cov(sampled_boxes[det_idx, :, 2:]) # covariance of bottom right corner
 
                 # Ensure covariances are positive semi-definite
                 for det_idx in range(len(covariances)):
@@ -185,35 +210,20 @@ class Evaluator:
                             covariances[det_idx, i] = torch.tensor(cov_matrix, device=output[0].device)
                 
                 # Round values for smaller size
-                covariances = torch.round(covariances * 1e13) / 1e13
+                covariances = torch.round(covariances * 1e6) / 1e6
+            elif output[0] is not None and len(output[0]) > 0:
+                # If we only have one sample but still have valid output, apply scaling
+                output[0][:, :4] *= scale_factor
+                covariances = None
             else:
                 covariances = None
-            # # Take first batch element since we're processing one image at a time
-            # output = output[0] if output else None
-            # all_scores = all_scores[0] if all_scores else None
         return output, all_scores, covariances
 
     def save_mc_predictions_to_json(self, data_yaml, conf_thresh, save_path, num_samples=30, iou_thresh=0.6):
         """Save Monte Carlo predictions to JSON in same format as YOLO predictions."""
         results_dict = {}
         
-        # Load dataset config
-        with open(data_yaml, 'r') as f:
-            config = yaml.safe_load(f)
-        
-        val_path = os.path.join(config.get('path', ''), config.get('val', ''))
-        if not os.path.exists(val_path):
-            LOGGER.error(f"Invalid validation path: {val_path}")
-            return
-        
-        # Process all images in all subdirectories
-        image_files = []
-        for root, _, _ in os.walk(val_path):
-            image_files.extend(data_utils.list_files_of_a_type(root, '.png'))
-    
-        LOGGER.info(f"Found {len(image_files)} images to process")
-        
-        for img_file in image_files:
+        for img_file in self.test_imgs:
             try:
                 # Get processed predictions
                 output, all_scores, covariances = self.monte_carlo_predictions(
@@ -223,7 +233,14 @@ class Evaluator:
                     num_samples
                 )
                 # Get relative path for image key
-                rel_path = os.path.relpath(img_file, val_path)
+                rel_path = os.path.basename(img_file)
+            
+                # If the filename starts with a directory that matches its name, remove it
+                # e.g., "747331/747331 [...]" becomes "747331 [...]"
+                if '/' in rel_path:
+                    parts = rel_path.split('/')
+                    if parts[-2] in parts[-1]:
+                        rel_path = parts[-1]
                 image_dets = []
                 # Format predictions for current image
                 if output is not None and len(output) > 0:
@@ -250,7 +267,15 @@ class Evaluator:
                 
             except Exception as e:
                 LOGGER.warning(f"Error processing image {img_file}: {e}")
-                results_dict[os.path.relpath(img_file, val_path)] = []
+                rel_path = os.path.basename(img_file)
+            
+                # If the filename starts with a directory that matches its name, remove it
+                # e.g., "747331/747331 [...]" becomes "747331 [...]"
+                if '/' in rel_path:
+                    parts = rel_path.split('/')
+                    if parts[-2] in parts[-1]:
+                        rel_path = parts[-1]
+                results_dict[rel_path] = []
                 continue
     
         # Save to JSON
@@ -329,16 +354,18 @@ class RCNNEvaluator(Evaluator):
         super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir, save_predictions, mc_dropout, num_samples, iou_thresh, conf_thresh, save_predictions_path, save_rvc, data_yaml)
 
     def infer_for_one_img(self, img_path):
+        self.model.eval()  # Keep this to maintain eval mode for other layers
 
-        self.model.eval()
-        print(f"\nProcessing image: {img_path}")
+        # Enable dropout if we're doing MC dropout
+        if self.mc_dropout:
+            enable_dropout(self.model)
 
         # Get clean filename if we're saving predictions
         if self.save_predictions:
             base_name = os.path.basename(img_path)
             parts = base_name.split('[')
             if len(parts) > 1:
-                clean_name = parts[0].strip() + '[' + parts[1].split(']')[0] + '].png'
+                clean_name = parts[0] + '[' + parts[1].split(']')[0] + '].png'
             else:
                 clean_name = base_name
 
@@ -364,7 +391,6 @@ class RCNNEvaluator(Evaluator):
                 ground_truths = self.get_labels_for_image(img_path)  # (N, 5) where N = number of labels
                 if self.mc_dropout:
                     return ground_truths, predictions
-
                 # Check if predictions list is empty
                 if not predictions:
                     print(f"Model returned empty predictions for {img_path}")
