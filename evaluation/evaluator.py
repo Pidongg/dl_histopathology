@@ -81,10 +81,24 @@ class Evaluator:
         if not os.path.exists(label_path):
             raise Exception(f"Label file for {filename} not found at {label_path}")
 
+        # Get the bounding boxes and labels
         bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
-        labels = torch.as_tensor(labels, dtype=torch.int32)  # convert from list to tensor
-        labels = labels.unsqueeze(1)
-
+        
+        # Ensure everything is on the correct device
+        if isinstance(bboxes, torch.Tensor):
+            bboxes = bboxes.to(self.device)
+        else:
+            bboxes = torch.tensor(bboxes, dtype=torch.float32, device=self.device)
+            
+        # Convert labels to tensor on the correct device
+        if isinstance(labels, torch.Tensor):
+            labels = labels.to(self.device)
+        else:
+            labels = torch.tensor(labels, dtype=torch.int32, device=self.device)
+            
+        labels = labels.view(-1, 1)  # reshape to (n, 1)
+        
+        # Concatenate boxes and labels
         return torch.cat((bboxes, labels), dim=1)
 
     def __get_preds_and_labels(self):
@@ -105,11 +119,11 @@ class Evaluator:
             self.preds.append(predictions)
             self.gt.append(ground_truths)
 
-    def confusion_matrix(self, conf_threshold=0.25, all_iou=False, plot=False, prefix=""):
+    def confusion_matrix(self, conf_threshold=0.25, all_iou=False, plot=False, prefix="", class_conf_thresholds=None):
         if not self.preds and not self.gt:
             raise Exception("No predictions and/or ground truths found")
 
-        return self.metrics.get_confusion_matrix(conf_threshold, all_iou=all_iou, plot=plot, prefix=prefix)
+        return self.metrics.get_confusion_matrix(conf_threshold, all_iou=all_iou, plot=plot, prefix=prefix, class_conf_thresholds=class_conf_thresholds)
 
     def ap_per_class(self, plot=False, plot_all=False, prefix=""):
         """
@@ -375,7 +389,7 @@ class RCNNEvaluator(Evaluator):
         except Exception as e:
             print(f"Error reading image {img_path}: {str(e)}")
             # Return empty tensors if image can't be read
-            return torch.zeros((0, 5)), torch.zeros((0, 6))
+            return torch.zeros((0, 5), device=self.device), torch.zeros((0, 6), device=self.device)
 
         transforms = []
         transforms.append(T.ToDtype(torch.float, scale=True))
@@ -384,13 +398,23 @@ class RCNNEvaluator(Evaluator):
 
         with torch.no_grad():
             try:
+                # Ensure model is on the correct device
+                self.model = self.model.to(self.device)
+                
+                # Transform and move image to device
                 x = transforms(image)
                 # convert RGBA -> RGB and move to device
                 x = x[:3, ...].to(self.device)
+                
+                # Get ground truth with device parameter
+                ground_truths = self.get_labels_for_image(img_path)
+                
+                # Get predictions
                 predictions = self.model([x, ])
-                ground_truths = self.get_labels_for_image(img_path)  # (N, 5) where N = number of labels
+                
                 if self.mc_dropout:
                     return ground_truths, predictions
+                    
                 # Check if predictions list is empty
                 if not predictions:
                     print(f"Model returned empty predictions for {img_path}")
@@ -398,11 +422,14 @@ class RCNNEvaluator(Evaluator):
                 
                 pred = predictions[0]
 
+                # Process prediction results
                 labels = pred['labels']
                 i = labels != 0  # indices of non-background class predictions
-                bboxes = pred['boxes'][i]
-                scores = pred['scores'][i].unsqueeze(-1)
-                labels = labels[i].unsqueeze(-1) - 1
+                
+                # Ensure all tensors are on the same device
+                bboxes = pred['boxes'][i].to(self.device)
+                scores = pred['scores'][i].unsqueeze(-1).to(self.device)
+                labels = labels[i].unsqueeze(-1).to(self.device) - 1  # Adjust class indices
 
                 # If saving predictions, store them in the dictionary
                 if self.save_predictions:
@@ -418,11 +445,13 @@ class RCNNEvaluator(Evaluator):
                         image_preds.append(pred_dict)
                     self.predictions_dict[clean_name] = image_preds
 
-                # predictions (n, 6) for n predictions
+                # Concatenate tensors that are guaranteed to be on the same device
                 predictions = torch.cat([bboxes, scores, labels], dim=-1)
 
                 return ground_truths, predictions
 
             except Exception as e:
                 print(f"Error processing {img_path}: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 return torch.zeros((0, 5), device=self.device), torch.zeros((0, 6), device=self.device)

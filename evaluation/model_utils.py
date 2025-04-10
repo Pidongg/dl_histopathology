@@ -19,7 +19,7 @@ def enable_dropout(model):
             m.train()
 
 def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=False, max_width=2000, max_height=2000, get_unknowns=False,
-                        classes=None, agnostic=False, use_xyxy_format=False):
+                        classes=None, agnostic=False, use_xyxy_format=False, class_conf_thresholds=None):
     """
     Performs  Non-Maximum Suppression on inference results
     Returns detections with shape:
@@ -97,14 +97,34 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=F
 
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
-            # Getting the indices where classes are above certain conf threshold
-            i, j = (x_all[:, 0, 4:] > conf_thres).nonzero().t()
+            if class_conf_thresholds is not None:
+                # Apply class-specific thresholds
+                mask = torch.zeros_like(x_all[:, 0, 4:], dtype=torch.bool)
+                for c, thresh in enumerate(class_conf_thresholds):
+                    if c < mask.shape[1]:  # Ensure we don't exceed number of classes
+                        mask[:, c] = x_all[:, 0, 4 + c] > thresh
+                i, j = mask.nonzero().t()
+            else:
+                # Use global threshold
+                i, j = (x_all[:, 0, 4:] > conf_thres).nonzero().t()
             x = torch.cat((box[i], x_all[i, 0, j + 4].unsqueeze(1), j.float().unsqueeze(1)), 1)
             x_all = x_all[i, ...]
         else:  # best class only
             conf, j = x_all[:, 0, 4:].max(1)
-            x = torch.cat((box, conf.unsqueeze(1), j.float().unsqueeze(1)), 1)[conf > conf_thres]
-            x_all = x_all[conf > conf_thres, ...]
+            
+            if class_conf_thresholds is not None:
+                # Check if each detection's best class passes its specific threshold
+                class_thresholds = torch.tensor(class_conf_thresholds, device=conf.device)
+                # Get threshold for each detection based on its class
+                thresholds = class_thresholds[j.long()]
+                # Filter based on class-specific thresholds
+                mask = conf > thresholds
+            else:
+                # Use global threshold
+                mask = conf > conf_thres
+                
+            x = torch.cat((box, conf.unsqueeze(1), j.float().unsqueeze(1)), 1)[mask]
+            x_all = x_all[mask, ...]
 
         # Filter by class
         if classes:

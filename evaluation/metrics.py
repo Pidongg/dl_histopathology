@@ -309,17 +309,19 @@ class ObjectDetectionMetrics:
         self.pred_cls = torch.cat(pred_cls_all, axis=-1)
         self.gt_cls = torch.cat(gt_cls_all, axis=-1)
 
-    def get_confusion_matrix(self, conf_threshold, all_iou=False, prefix="", plot=False):
+    def get_confusion_matrix(self, conf_threshold, all_iou=False, prefix="", plot=False, class_conf_thresholds=None):
         """
         Returns a confusion matrix with predicted class as row index, and gt class as col index.
         Matches Ultralytics' implementation.
 
         Args:
-            conf_threshold: Confidence threshold for predictions
+            conf_threshold: Confidence threshold for predictions (used as default)
             all_iou (bool): Indicates whether to compute confusion matrices for all iou thresholds. If false,
                 just compute for IOU=0.5.
             prefix (str): Prefix for saved plot filename
             plot (bool): Whether to save confusion matrix plot
+            class_conf_thresholds (dict): Dictionary mapping class indices to specific confidence thresholds.
+                                         If provided, overrides conf_threshold for specific classes.
         """
         t = self.iou_threshold.shape[0]
 
@@ -338,8 +340,26 @@ class ObjectDetectionMetrics:
                 pred = self.detections[i]
                 gt = self.ground_truths[i]
                 
-                # Filter by confidence
-                pred = pred[pred[:, 4] >= conf_threshold]
+                # Filter by confidence - handle class-specific thresholds if provided
+                if class_conf_thresholds is not None:
+                    # Create a mask for predictions to keep
+                    mask = torch.zeros(pred.shape[0], dtype=torch.bool, device=pred.device)
+                    
+                    # Process each class separately with its specific threshold
+                    for cls_idx, cls_thresh in class_conf_thresholds.items():
+                        cls_mask = (pred[:, 5] == cls_idx) & (pred[:, 4] >= cls_thresh)
+                        mask = mask | cls_mask
+                    
+                    # For classes not in class_conf_thresholds, use the default threshold
+                    default_mask = ~torch.tensor([pred[i, 5].item() in class_conf_thresholds for i in range(pred.shape[0])], 
+                                               device=pred.device)
+                    default_mask = default_mask & (pred[:, 4] >= conf_threshold)
+                    mask = mask | default_mask
+                    
+                    pred = pred[mask]
+                else:
+                    # Use single threshold for all classes
+                    pred = pred[pred[:, 4] >= conf_threshold]
                 
                 if gt.shape[0] == 0:  # No ground truth labels
                     if pred.shape[0] > 0:

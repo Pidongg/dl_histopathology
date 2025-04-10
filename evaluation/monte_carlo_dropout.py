@@ -27,10 +27,19 @@ def check_dropout_state(model, msg=""):
     return dropout_states
 
 
-def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30, is_yolo=False, input_size=640):
+def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30, is_yolo=False, input_size=640, class_conf_thresholds=None):
     """
     Perform multiple forward passes with dropout enabled.
     Returns raw model outputs before NMS.
+    
+    Args:
+        model: YOLO model
+        img: Input image path
+        conf_thresh: Confidence threshold (float or list of floats for class-specific thresholds)
+        iou_thresh: IoU threshold for NMS
+        num_samples: Number of Monte Carlo samples
+        is_yolo: Whether using YOLO model (to enable dropout)
+        input_size: Input size for the model
     """
     infs_all = []
     num_classes = 4 
@@ -80,7 +89,8 @@ def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30,
             multi_label=False,
             max_width=model_width,
             max_height=model_height,
-            use_xyxy_format=use_xyxy_format  # Pass flag to NMS function
+            use_xyxy_format=use_xyxy_format,
+            class_conf_thresholds=class_conf_thresholds
         )
         
         # Calculate scaling factor dynamically
@@ -133,8 +143,20 @@ def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30,
             
     return output, all_scores, covariances
 
-def save_mc_predictions_to_json(model, data_yaml, conf_thresh, save_path, num_samples=30, iou_thresh=0.6, is_yolo=False, input_size=640):
-    """Save Monte Carlo predictions to JSON in same format as YOLO predictions."""
+def save_mc_predictions_to_json(model, data_yaml, conf_thresh, save_path, num_samples=30, iou_thresh=0.6, is_yolo=False, input_size=640, class_conf_thresholds=None):
+    """
+    Save Monte Carlo predictions to JSON in same format as YOLO predictions.
+    
+    Args:
+        model: YOLO model
+        data_yaml: Path to data configuration YAML file
+        conf_thresh: Confidence threshold (float or list of floats for class-specific thresholds)
+        save_path: Path to save predictions JSON
+        num_samples: Number of Monte Carlo samples
+        iou_thresh: IoU threshold for NMS
+        is_yolo: Whether the model is YOLO (for enabling dropout)
+        input_size: Input size for the model
+    """
     results_dict = {}
     
     # Load dataset config
@@ -163,7 +185,8 @@ def save_mc_predictions_to_json(model, data_yaml, conf_thresh, save_path, num_sa
                 iou_thresh,
                 num_samples,
                 is_yolo=is_yolo,
-                input_size=input_size
+                input_size=input_size,
+                class_conf_thresholds=class_conf_thresholds
             )
             
             # Get the full filename without any parent directories
@@ -186,6 +209,12 @@ def save_mc_predictions_to_json(model, data_yaml, conf_thresh, save_path, num_sa
                     conf = float(pred[4].cpu().numpy())
                     cls_id = int(pred[5].cpu().numpy())
                     class_confs = all_scores[idx].cpu().numpy()
+                    
+                    # Apply class-specific threshold if provided
+                    if isinstance(conf_thresh, list) and cls_id < len(conf_thresh):
+                        class_threshold = conf_thresh[cls_id]
+                        if conf < class_threshold:
+                            continue
                     
                     det_dict = {
                         "boxes": box.tolist(),

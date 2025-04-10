@@ -72,6 +72,9 @@ def main():
                         type=float,
                         default=0.25)
     parser.add_argument("--dropout_rate", type=float, help="Dropout rate", default=0.5)
+    parser.add_argument("--class_conf_thresh", type=str, 
+                        help="Comma-separated list of confidence thresholds for each class, e.g. '0.3,0.5,0.7' or '[0.3,0.5,0.7]'", 
+                        default=None)
     args = parser.parse_args()
 
     model_path = args.model
@@ -146,7 +149,28 @@ def main():
 
     elif args.rcnn:
         num_classes = len(class_dict) + 1
-        model = run_train_rcnn.get_model_instance_segmentation(num_classes, stochastic=stochastic, all_scores=True, skip_nms=stochastic, conf_thresh=float(args.conf), iou_thresh=float(args.iou), dropout_rate=float(args.dropout_rate))
+        
+        # Process class-specific confidence thresholds if provided
+        class_specific_thresholds = None
+        if args.class_conf_thresh:
+            # Strip brackets if present and split by commas
+            thresholds_str = args.class_conf_thresh.strip('[]')
+            thresholds_list = [float(x) for x in thresholds_str.split(',')]
+            
+            # Convert list to dictionary with 1-indexed class IDs as keys
+            # (since RCNN uses 0 as background class)
+            if len(thresholds_list) == len(class_dict):
+                class_specific_thresholds = {i+1: thresh for i, thresh in enumerate(thresholds_list)}
+            else:
+                print(f"Error: Number of provided thresholds ({len(thresholds_list)}) does not match number of classes ({len(class_dict)})")
+                return
+        
+        model = run_train_rcnn.get_model_instance_segmentation(num_classes, stochastic=stochastic, 
+                                                               all_scores=True, skip_nms=stochastic, 
+                                                               conf_thresh=float(args.conf), 
+                                                               iou_thresh=float(args.iou), 
+                                                               dropout_rate=float(args.dropout_rate),
+                                                               class_conf_thresh=class_specific_thresholds)
         
         # Load state dict to the correct device
         state_dict = torch.load(model_path, map_location=device)
@@ -176,9 +200,7 @@ def main():
 
     ap = evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
     print("AP per class:", ap)
-    matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True, prefix=prefix)
-    print(matrix)
-    matrix = evaluator.confusion_matrix(conf_threshold=0.0, all_iou=False, plot=True, prefix=prefix)
+    matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True, prefix=prefix, class_conf_thresholds=class_specific_thresholds)
     print(matrix)
 
     print("mAP@50: ", evaluator.map50())
