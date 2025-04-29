@@ -1,4 +1,4 @@
-path: "/local/scratch/pz286"  # changed to parent directory
+path: "/local/scratch/pz286"
 train: images/train  
 val: images/validation
 test: images/test

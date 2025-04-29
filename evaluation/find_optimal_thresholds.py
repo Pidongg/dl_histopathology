@@ -31,12 +31,12 @@ def evaluate_with_thresholds(model, data_yaml, iou_thresh, conf_thresholds, clas
     }
 
 def find_optimal_conf_thresholds(model, data_yaml, iou_thresh, class_names, conf_range=None):
-    """Find optimal confidence threshold for each class."""
+    """Find optimal confidence threshold for each class based on F1 score."""
     if conf_range is None:
         conf_range = np.arange(0.05, 0.96, 0.1)  # Default if not specified
     
     best_confs = [0.25] * len(class_names)  # Default starting point
-    best_map50s = [0] * len(class_names)  # Track best mAP50 for each class
+    best_f1s = [0] * len(class_names)  # Track best F1 score for each class
     
     # Store dataframes for each class
     all_results_dfs = []
@@ -63,25 +63,17 @@ def find_optimal_conf_thresholds(model, data_yaml, iou_thresh, class_names, conf
             # Evaluate with current thresholds
             metrics = evaluate_with_thresholds(model, data_yaml, iou_thresh, class_conf_thresholds, class_names)
             
-            # Try to extract per-class AP@0.5 values if available
-            try:
-                # If ap50 exists and contains per-class values
-                per_class_map50 = metrics.box.ap50[class_idx]
-            except (AttributeError, IndexError):
-                # Fallback to using map50 (overall) for optimization
-                per_class_map50 = metrics['map50']
-            
             # Record results
             results_data['class'].append(class_names[class_idx])
             results_data['confidence'].append(conf)
             results_data['f1'].append(metrics['f1'][class_idx])
             results_data['precision'].append(metrics['precision'][class_idx])
             results_data['recall'].append(metrics['recall'][class_idx])
-            results_data['map50'].append(per_class_map50)
+            results_data['map50'].append(metrics['maps'][class_idx])
             
-            # Update best threshold if this class's mAP50 is better
-            if per_class_map50 > best_map50s[class_idx]:
-                best_map50s[class_idx] = per_class_map50
+            # Update best threshold if this class's F1 score is better
+            if metrics['f1'][class_idx] > best_f1s[class_idx]:
+                best_f1s[class_idx] = metrics['f1'][class_idx]
                 best_confs[class_idx] = conf
         
         # Create DataFrame for this class and add to collection
@@ -94,15 +86,16 @@ def find_optimal_conf_thresholds(model, data_yaml, iou_thresh, class_names, conf
     return best_confs, results_df
 
 def find_optimal_iou_threshold(model, data_yaml, conf_thresholds, class_names, iou_range=None):
-    """Find optimal IoU threshold using optimized confidence thresholds."""
+    """Find optimal IoU threshold using optimized confidence thresholds based on average F1 score."""
     if iou_range is None:
         iou_range = np.arange(0.3, 0.71, 0.05)  # Default if not specified
     
     best_iou = 0.5  # Default
-    best_map50 = 0  # Changed from best_map to best_map50
+    best_avg_f1 = 0  # Changed from best_map50 to best_avg_f1
     
     results_data = {
         'iou': [],
+        'avg_f1': [],
         'map': [],
         'map50': [],
         'map75': []
@@ -114,15 +107,19 @@ def find_optimal_iou_threshold(model, data_yaml, conf_thresholds, class_names, i
         # Evaluate with current IoU threshold and optimized conf thresholds
         metrics = evaluate_with_thresholds(model, data_yaml, iou, conf_thresholds, class_names)
         
+        # Calculate average F1 score across all classes
+        avg_f1 = sum(metrics['f1']) / len(metrics['f1'])
+        
         # Record results
         results_data['iou'].append(iou)
+        results_data['avg_f1'].append(avg_f1)
         results_data['map'].append(metrics['map'])
         results_data['map50'].append(metrics['map50'])
         results_data['map75'].append(metrics['map75'])
         
-        # Update best threshold if mAP50 is better (changed from mAP)
-        if metrics['map50'] > best_map50:
-            best_map50 = metrics['map50']
+        # Update best threshold if average F1 is better
+        if avg_f1 > best_avg_f1:
+            best_avg_f1 = avg_f1
             best_iou = iou
     
     # Create DataFrame for easier analysis and visualization
@@ -137,7 +134,7 @@ def visualize_conf_thresholds(results_df, save_path='conf_threshold_optimization
     # Create a color palette
     palette = sns.color_palette("husl", n_colors=len(results_df['class'].unique()))
     
-    for i, class_name in enumerate(sorted(results_df['class'].unique())):
+    for i, class_name in enumerate(results_df['class'].unique()):
         class_data = results_df[results_df['class'] == class_name]
         
         plt.subplot(2, 2, 1)
@@ -178,22 +175,34 @@ def visualize_conf_thresholds(results_df, save_path='conf_threshold_optimization
 
 def visualize_iou_thresholds(results_df, save_path='iou_threshold_optimization.png'):
     """Visualize IoU threshold optimization results."""
-    plt.figure(figsize=(12, 5))
+    plt.figure(figsize=(12, 8))
     
-    plt.subplot(1, 2, 1)
+    plt.subplot(2, 2, 1)
+    plt.plot(results_df['iou'], results_df['avg_f1'], marker='o', linewidth=2, color='green')
+    plt.xlabel('IoU Threshold')
+    plt.ylabel('Average F1 Score')
+    plt.title('Average F1 Score vs IoU Threshold')
+    plt.grid(True, alpha=0.3)
+    
+    plt.subplot(2, 2, 2)
     plt.plot(results_df['iou'], results_df['map'], marker='o', linewidth=2)
     plt.xlabel('IoU Threshold')
     plt.ylabel('mAP (0.5-0.95)')
     plt.title('mAP vs IoU Threshold')
     plt.grid(True, alpha=0.3)
     
-    plt.subplot(1, 2, 2)
+    plt.subplot(2, 2, 3)
     plt.plot(results_df['iou'], results_df['map50'], marker='o', linewidth=2, label='mAP50')
+    plt.xlabel('IoU Threshold')
+    plt.ylabel('mAP50')
+    plt.title('mAP50 vs IoU Threshold')
+    plt.grid(True, alpha=0.3)
+    
+    plt.subplot(2, 2, 4)
     plt.plot(results_df['iou'], results_df['map75'], marker='o', linewidth=2, label='mAP75')
     plt.xlabel('IoU Threshold')
-    plt.ylabel('mAP')
-    plt.title('mAP50 and mAP75 vs IoU Threshold')
-    plt.legend()
+    plt.ylabel('mAP75')
+    plt.title('mAP75 vs IoU Threshold')
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -263,7 +272,7 @@ def main():
 
     # First, find optimal confidence thresholds using default IoU
     default_iou = args.default_iou
-    LOGGER.info(f"Finding optimal confidence thresholds using default IoU={default_iou} based on mAP50")
+    LOGGER.info(f"Finding optimal confidence thresholds using default IoU={default_iou} based on F1 scores")
     best_confs, conf_results = find_optimal_conf_thresholds(
         model, args.cfg, default_iou, class_names, conf_range
     )
@@ -276,7 +285,7 @@ def main():
     visualize_conf_thresholds(conf_results, conf_vis_path)
     
     # Now find optimal IoU threshold using the optimized confidence thresholds
-    LOGGER.info(f"Finding optimal IoU threshold using optimized confidence thresholds based on mAP50")
+    LOGGER.info(f"Finding optimal IoU threshold using optimized confidence thresholds based on average F1 score")
     best_iou, iou_results = find_optimal_iou_threshold(
         model, args.cfg, best_confs, class_names, iou_range
     )
@@ -307,9 +316,16 @@ def main():
     LOGGER.info("Running final evaluation with optimal thresholds")
     final_metrics = evaluate_with_thresholds(model, args.cfg, best_iou, best_confs, class_names)
     
+    # Print final results
     LOGGER.info(f"Final mAP50-95: {final_metrics['map']:.4f}")
     LOGGER.info(f"Final mAP50: {final_metrics['map50']:.4f}")
-    LOGGER.info(f"Final per-class F1 scores: {final_metrics['f1']}")
+    LOGGER.info("Final per-class F1 scores:")
+    for i, class_name in enumerate(class_names):
+        LOGGER.info(f"  {class_name}: {final_metrics['f1'][i]:.4f}")
+    
+    # Calculate and print average F1 score
+    avg_f1 = sum(final_metrics['f1']) / len(final_metrics['f1'])
+    LOGGER.info(f"Final average F1 score: {avg_f1:.4f}")
 
 if __name__ == "__main__":
     main()

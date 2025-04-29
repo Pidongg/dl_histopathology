@@ -1,5 +1,7 @@
 import time
+from data_preparation import data_utils
 import numpy as np
+from pdq_evaluation.read_files import LOGGER
 import torch    
 import torchvision
 
@@ -18,7 +20,7 @@ def enable_dropout(model):
         if m.__class__.__name__.startswith('Dropout'):
             m.train()
 
-def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=False, max_width=2000, max_height=2000, get_unknowns=False,
+def non_max_suppression(prediction, conf_thres=0.001, iou_thres=0.6, multi_label=False, max_width=2000, max_height=2000, get_unknowns=False,
                         classes=None, agnostic=False, use_xyxy_format=False, class_conf_thresholds=None):
     """
     Performs  Non-Maximum Suppression on inference results
@@ -130,41 +132,14 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=F
         if classes:
             x = x[(j.view(-1, 1) == torch.tensor(classes, device=j.device)).any(1)]
 
-        # Apply finite constraint
-        # if not torch.isfinite(x).all():
-        #     x = x[torch.isfinite(x).all(1)]
-
         # If none remain process next image
         n = x.shape[0]  # number of boxes
         if not n:
             continue
 
-        # Sort by confidence
-        # x = x[x[:, 4].argsort(descending=True)]
-
-        # Batched NMS
-        # c will contain the class for each detection i
-        c = x[:, 5] * 0 if agnostic else x[:, 5]  # classes
-        # boxes will contain all the detections bboxes (shape i X 4), and those will be passed to torchvision NMS operator
-        # In order to avoid removing bboxes with big iou but classifying different classes, the bounding boxes are shifted/offseted
-        # This offset is done by "c.view(-1, 1) * max_wh", which multiplies each discrete class by the mximum width/height allowed,
-        #    (notice that detections with coordinates above this maximum value were dropped out in the beginning of this function)
-        #    this way,we are able to clearly separate all the bounding boxes in a way that bboxes with similar coordinates but
-        #    with different classes are never clustered together for the nms() function
         boxes, scores = x[:, :4].clone() + c.view(-1, 1) * max_wh, x[:, 4]  # boxes (offset by class), scores
         i = torchvision.ops.boxes.nms(boxes, scores, iou_thres)
         
-        # This "merge" won't happen because of beginning of this function and later changes
-        #if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
-        #    try:  # update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
-        #        iou = box_iou(boxes[i], boxes) > iou_thres  # iou matrix
-        #        weights = iou * scores[None]  # box weights, None to index a tensor basically adds a new dimension
-        #        x[i, :4] = torch.mm(weights, x[:, :4]).float() / weights.sum(1, keepdim=True)  # merged boxes
-        #        # i = i[iou.sum(1) > 1]  # require redundancy
-        #    except:  # possible CUDA error https://github.com/ultralytics/yolov3/issues/1139
-        #        print('ERROR at non_max_suppression merge:', x, i, x.shape, i.shape)
-        #        pass
-
         output[xi] = x[i]
         
         
@@ -173,9 +148,77 @@ def non_max_suppression(prediction, conf_thres=0.1, iou_thres=0.6, multi_label=F
 
         if prediction.shape[2] > 1:
             sampled_coords[xi] = x_all[:, 1:, :4]
-        
-        # I've removed time_limit to guarantee that everything is processed
-        #if (time.time() - t) > time_limit:
-        #    break  # time limit exceeded
 
     return output, all_scores, sampled_coords
+
+def monte_carlo_predictions(self, img, conf_thresh, iou_thresh, num_samples=30):
+    """
+    Perform multiple forward passes with dropout enabled.
+        Returns raw model outputs before NMS.
+        """
+    infs_all = []
+
+    # Perform multiple forward passes
+    with torch.no_grad():
+        for _ in range(num_samples):
+            # Get raw model output
+            _, predictions = self.infer_for_one_img(img)
+            if isinstance(predictions, list):
+                predictions = predictions[0]
+            
+            infs_all.append(predictions.unsqueeze(2))
+        
+        if num_samples > 1:
+            inf_mean = torch.mean(torch.stack(infs_all), dim=0)
+            infs_all.insert(0, inf_mean)
+            inf_out = torch.cat(infs_all, dim=2)
+        else:
+            inf_out = infs_all[0]
+
+        # Apply NMS and get sampled coordinates
+        output, all_scores, sampled_coords = non_max_suppression(
+            inf_out,
+            conf_thres=conf_thresh,
+            iou_thres=iou_thresh,
+            multi_label=False,
+            max_width=800,
+            max_height=800
+        )
+        image_width = 512  # Or get actual image dimensions
+        scale_factor = image_width / 800
+
+        # Process sampled coordinates if we have multiple samples
+        if num_samples > 1 and output[0] is not None and len(output[0]) > 0:
+            # Use fixed dimensions
+            height, width = 512, 512
+            output[0][:, :4] *= scale_factor
+            
+            # Process sampled coordinates for the first (and only) image in batch
+            sampled_boxes = data_utils.xywh2xyxy(sampled_coords[0].reshape(-1, 4)).reshape(sampled_coords[0].shape)
+            sampled_boxes *= scale_factor
+            data_utils.clip_coords(sampled_boxes.reshape(-1, 4), (height, width))
+
+            # Calculate covariances for each detection
+            covariances = torch.zeros(sampled_boxes.shape[0], 2, 2, 2, device=output[0].device)
+            for det_idx in range(sampled_boxes.shape[0]):
+                covariances[det_idx, 0, ...] = data_utils.cov(sampled_boxes[det_idx, :, :2]) # covariance of top left corner
+                covariances[det_idx, 1, ...] = data_utils.cov(sampled_boxes[det_idx, :, 2:]) # covariance of bottom right corner
+
+            # Ensure covariances are positive semi-definite
+            for det_idx in range(len(covariances)):
+                for i in range(2):
+                    cov_matrix = covariances[det_idx, i].cpu().numpy()
+                    if not data_utils.is_pos_semidef(cov_matrix):
+                        LOGGER.warning('Converting covariance matrix to near PSD')
+                        cov_matrix = data_utils.get_near_psd(cov_matrix)
+                        covariances[det_idx, i] = torch.tensor(cov_matrix, device=output[0].device)
+            
+            # Round values for smaller size
+            covariances = torch.round(covariances * 1e6) / 1e6
+        elif output[0] is not None and len(output[0]) > 0:
+            # If we only have one sample but still have valid output, apply scaling
+            output[0][:, :4] *= scale_factor
+            covariances = None
+        else:
+            covariances = None
+    return output, all_scores, covariances

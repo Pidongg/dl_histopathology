@@ -44,7 +44,7 @@ def evaluate_with_thresholds(checkpoint_path, data_yaml, iou_thresh, conf_thresh
     )
     
     # Get metrics
-    ap = evaluator.ap_per_class()
+    ap, f1 = evaluator.ap_per_class(f1=True)
     map50 = evaluator.map50()
     map50_95 = evaluator.map50_95()
     
@@ -52,15 +52,16 @@ def evaluate_with_thresholds(checkpoint_path, data_yaml, iou_thresh, conf_thresh
         'map': map50_95,
         'map50': map50,
         'maps': ap.tolist() if hasattr(ap, 'tolist') else ap,  # Per-class mAP
+        'f1': f1.tolist() if hasattr(f1, 'tolist') else f1
     }
 
 def find_optimal_conf_thresholds(checkpoint_path, data_yaml, iou_thresh, class_names, test_images, test_labels, device, save_dir, conf_range=None):
-    """Find optimal confidence threshold for each class."""
+    """Find optimal confidence threshold for each class based on F1 score."""
     if conf_range is None:
         conf_range = np.arange(0.05, 0.96, 0.1)  # Default if not specified
     
     best_confs = [0.25] * len(class_names)  # Default starting point
-    best_map50s = [0] * len(class_names)  # Track best mAP50 for each class
+    best_f1s = [0] * len(class_names)  # Track best F1 for each class
     
     # Store dataframes for each class
     all_results_dfs = []
@@ -73,7 +74,7 @@ def find_optimal_conf_thresholds(checkpoint_path, data_yaml, iou_thresh, class_n
         results_data = {
             'class': [],
             'confidence': [],
-            'map50': []
+            'f1': []
         }
         
         for conf in tqdm(conf_range):
@@ -84,28 +85,28 @@ def find_optimal_conf_thresholds(checkpoint_path, data_yaml, iou_thresh, class_n
             # Evaluate with current thresholds
             metrics = evaluate_with_thresholds(checkpoint_path, data_yaml, iou_thresh, class_conf_thresholds, class_names, test_images, test_labels, device, save_dir)
             
-            # Extract per-class mAP50 values if available
+            # Extract per-class F1 values if available
             try:
-                per_class_map50 = metrics['maps'][class_idx]
-                # If it's a list (multiple IoU thresholds), take the value for IoU=0.5
-                if isinstance(per_class_map50, list):
-                    per_class_map50 = per_class_map50[0]  # First element corresponds to IoU=0.5
+                per_class_f1 = metrics['f1'][class_idx]
+                # If it's a list (multiple IoU thresholds), take the first value
+                if isinstance(per_class_f1, list):
+                    per_class_f1 = per_class_f1[0]
             except (AttributeError, IndexError, TypeError):
-                # Fallback to using map50 (overall) for optimization
-                per_class_map50 = metrics['map50']
+                # Fallback - shouldn't normally happen
+                per_class_f1 = 0
             
             # Convert tensor to Python float if necessary
-            if isinstance(per_class_map50, torch.Tensor):
-                per_class_map50 = per_class_map50.item()
+            if isinstance(per_class_f1, torch.Tensor):
+                per_class_f1 = per_class_f1.item()
             
             # Record results
             results_data['class'].append(class_names[class_idx])
             results_data['confidence'].append(float(conf))
-            results_data['map50'].append(float(per_class_map50))
-            print(per_class_map50, best_map50s[class_idx])
-            # Update best threshold if this class's mAP50 is better
-            if per_class_map50 > best_map50s[class_idx]:
-                best_map50s[class_idx] = per_class_map50
+            results_data['f1'].append(float(per_class_f1))
+            print(per_class_f1, best_f1s[class_idx])
+            # Update best threshold if this class's F1 is better
+            if per_class_f1 > best_f1s[class_idx]:
+                best_f1s[class_idx] = per_class_f1
                 best_confs[class_idx] = conf
         
         # Create DataFrame for this class and add to collection
@@ -118,17 +119,18 @@ def find_optimal_conf_thresholds(checkpoint_path, data_yaml, iou_thresh, class_n
     return best_confs, results_df
 
 def find_optimal_iou_threshold(checkpoint_path, data_yaml, conf_thresholds, class_names, test_images, test_labels, device, save_dir, iou_range=None):
-    """Find optimal IoU threshold using optimized confidence thresholds."""
+    """Find optimal IoU threshold using optimized confidence thresholds based on F1 score."""
     if iou_range is None:
         iou_range = np.arange(0.3, 0.71, 0.05)  # Default if not specified
     
     best_iou = 0.5  # Default
-    best_map50 = 0
+    best_f1 = 0
     
     results_data = {
         'iou': [],
         'map': [],
         'map50': [],
+        'f1': []
     }
     
     print("Finding optimal IoU threshold with optimized confidence thresholds")
@@ -141,14 +143,21 @@ def find_optimal_iou_threshold(checkpoint_path, data_yaml, conf_thresholds, clas
         map_val = metrics['map'].item() if isinstance(metrics['map'], torch.Tensor) else metrics['map']
         map50_val = metrics['map50'].item() if isinstance(metrics['map50'], torch.Tensor) else metrics['map50']
         
+        # Calculate average F1 score across all classes
+        f1_values = metrics['f1']
+        if isinstance(f1_values, torch.Tensor):
+            f1_values = f1_values.tolist()
+        avg_f1 = sum(f1_values) / len(f1_values) if len(f1_values) > 0 else 0
+        
         # Record results
         results_data['iou'].append(float(iou))
         results_data['map'].append(float(map_val))
         results_data['map50'].append(float(map50_val))
+        results_data['f1'].append(float(avg_f1))
         
-        # Update best threshold if mAP50 is better
-        if map50_val > best_map50:
-            best_map50 = map50_val
+        # Update best threshold if average F1 is better
+        if avg_f1 > best_f1:
+            best_f1 = avg_f1
             best_iou = iou
     
     # Create DataFrame for easier analysis and visualization
@@ -163,14 +172,14 @@ def visualize_conf_thresholds(results_df, save_path='conf_threshold_optimization
     # Create a color palette
     palette = sns.color_palette("husl", n_colors=len(results_df['class'].unique()))
     
-    for i, class_name in enumerate(sorted(results_df['class'].unique())):
+    for i, class_name in enumerate(results_df['class'].unique()):
         class_data = results_df[results_df['class'] == class_name]
         
-        plt.plot(class_data['confidence'], class_data['map50'], marker='o', label=class_name, color=palette[i])
+        plt.plot(class_data['confidence'], class_data['f1'], marker='o', label=class_name, color=palette[i])
     
     plt.xlabel('Confidence Threshold')
-    plt.ylabel('mAP50')
-    plt.title('mAP50 vs Confidence Threshold')
+    plt.ylabel('F1 Score')
+    plt.title('F1 Score vs Confidence Threshold')
     plt.grid(True, alpha=0.3)
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     
@@ -190,10 +199,10 @@ def visualize_iou_thresholds(results_df, save_path='iou_threshold_optimization.p
     plt.grid(True, alpha=0.3)
     
     plt.subplot(1, 2, 2)
-    plt.plot(results_df['iou'], results_df['map50'], marker='o', linewidth=2)
+    plt.plot(results_df['iou'], results_df['f1'], marker='o', linewidth=2)
     plt.xlabel('IoU Threshold')
-    plt.ylabel('mAP50')
-    plt.title('mAP50 vs IoU Threshold')
+    plt.ylabel('F1 Score')
+    plt.title('F1 Score vs IoU Threshold')
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
@@ -284,7 +293,7 @@ def main():
 
     # First, find optimal confidence thresholds using default IoU
     default_iou = args.default_iou
-    print(f"Finding optimal confidence thresholds using default IoU={default_iou} based on mAP50")
+    print(f"Finding optimal confidence thresholds using default IoU={default_iou} based on F1 score")
     best_confs, conf_results = find_optimal_conf_thresholds(
         args.pt, args.cfg, default_iou, class_names, args.test_imgs, args.test_labels, device, args.output_dir, conf_range
     )
@@ -297,7 +306,7 @@ def main():
     visualize_conf_thresholds(conf_results, conf_vis_path)
     
     # Now find optimal IoU threshold using the optimized confidence thresholds
-    print(f"Finding optimal IoU threshold using optimized confidence thresholds based on mAP50")
+    print(f"Finding optimal IoU threshold using optimized confidence thresholds based on F1 score")
     best_iou, iou_results = find_optimal_iou_threshold(args.pt, args.cfg, best_confs, class_names, args.test_imgs, args.test_labels, device, args.output_dir, iou_range
     )
     
@@ -329,6 +338,13 @@ def main():
     
     print(f"Final mAP50-95: {final_metrics['map']:.4f}")
     print(f"Final mAP50: {final_metrics['map50']:.4f}")
+    
+    # Calculate and print the average F1 score
+    f1_values = final_metrics['f1']
+    if isinstance(f1_values, torch.Tensor):
+        f1_values = f1_values.tolist()
+    avg_f1 = sum(f1_values) / len(f1_values) if len(f1_values) > 0 else 0
+    print(f"Final average F1 score: {avg_f1:.4f}")
 
 if __name__ == "__main__":
     main() 

@@ -18,9 +18,39 @@ import cv2
 import ray
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
+import matplotlib.pyplot as plt
+import time
+import signal
+import threading
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from data_preparation.rcnn_datasets import RCNNDataset
+
+def renew_kerberos_ticket(password, interval=10800):
+    """
+    Periodically renew Kerberos ticket to prevent expiration.
+    
+    Args:
+        password: The Kerberos password
+        interval: Time in seconds between renewal attempts (default 30 minutes)
+    """
+    def renewal_worker():
+        while True:
+            try:
+                # Run kinit with the password
+                process = subprocess.Popen(['kinit'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                process.communicate(input=password.encode())
+                print("Kerberos ticket renewed successfully")
+            except Exception as e:
+                print(f"Error renewing Kerberos ticket: {e}")
+            
+            # Sleep for the specified interval
+            time.sleep(interval)
+    
+    # Start renewal in a separate thread
+    renewal_thread = threading.Thread(target=renewal_worker, daemon=True)
+    renewal_thread.start()
+    return renewal_thread
 
 def get_gpu_info():
     """Get GPU utilization and memory info using nvidia-smi."""
@@ -84,6 +114,9 @@ def get_unused_filename(out_dir, filename, extension):
     return path_to_use
 
 def train_tune(config):
+    # Import ray train at the beginning
+    from ray import train
+    
     def get_train_transform(config):
         return A.Compose([
             A.HorizontalFlip(p=config["horizontal_flip_p"]),
@@ -97,6 +130,9 @@ def train_tune(config):
                 mask_interpolation=cv2.INTER_NEAREST,
                 p=config["affine_p"]
             ),
+            A.MotionBlur(blur_limit=config["motion_blur_limit"], p=config["motion_blur_p"]),
+            A.MedianBlur(blur_limit=config["median_blur_limit"], p=config["median_blur_p"]),
+            A.Blur(blur_limit=config["blur_limit"], p=config["blur_p"]),
             A.CLAHE(p=config["clahe_p"], 
                     clip_limit=(config["clahe_clip_min"], config["clahe_clip_max"]),
                     tile_grid_size=(8, 8)),
@@ -231,7 +267,7 @@ def train_tune(config):
     # Define data loaders with tunable batch size and proper CUDA settings
     data_loader_train = DataLoader(
         dataset,
-        batch_size=4,
+        batch_size=2,
         shuffle=True,
         num_workers=0,  # Changed from 4 to 0 to avoid CUDA initialization issues
         collate_fn=collate_fn
@@ -239,7 +275,7 @@ def train_tune(config):
 
     data_loader_valid = DataLoader(
         dataset_valid,
-        batch_size=4,
+        batch_size=2,
         shuffle=False,
         num_workers=0,  # Changed from 4 to 0 to avoid CUDA initialization issues
         collate_fn=collate_fn
@@ -264,17 +300,48 @@ def train_tune(config):
             T_max=config["T_max"]
         )
 
-    for epoch in range(6):  # Run for fewer epochs during tuning
+    # Initialize start epoch
+    start_epoch = 0
+    
+    # Load checkpoint if it exists
+    loaded_checkpoint = train.get_checkpoint()
+    if loaded_checkpoint:
+        checkpoint_path = os.path.join(loaded_checkpoint, "checkpoint.pt")
+        if os.path.exists(checkpoint_path):
+            print(f"Loading checkpoint from {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path)
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            print(f"Resuming from epoch {start_epoch}")
+
+    # Use epochs_per_trial from the config instead of hardcoded value
+    for epoch in range(start_epoch, config["epochs_per_trial"]):
         train_loss = train_one_epoch(model, optimizer, data_loader_train, device)
         scheduler.step()
         valid_loss = validate(model, data_loader_valid, device)
         
-        # Update to use the new reporting API
-        from ray import train
+        # Save checkpoint
+        checkpoint_dir = train.get_checkpoint()
+        checkpoint = {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "train_loss": train_loss,
+            "valid_loss": valid_loss
+        }
+        
+        if checkpoint_dir is not None:
+            checkpoint_path = os.path.join(checkpoint_dir, "checkpoint.pt")
+            torch.save(checkpoint, checkpoint_path)
+        
+        # Update to use the new reporting API with checkpoint
         train.report({
             "valid_loss": valid_loss,
             "train_loss": train_loss
-        })
+        }, checkpoint=checkpoint_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -289,16 +356,36 @@ if __name__ == "__main__":
     parser.add_argument("model_name",
                         help="Base name under which to save the model")
 
-    parser.add_argument("num_epochs", type=int,
-                        help="Number of epochs to train for")
+    parser.add_argument("epochs_per_trial", type=int,
+                        help="Number of epochs to train each trial")
+                        
+    parser.add_argument("num_trials", type=int,
+                        help="Number of hyperparameter trials to run")
+                        
     parser.add_argument("--stochastic", action="store_true", help="Use stochastic dropout", default=False)
+    parser.add_argument("--kerberos-password", help="Kerberos password for ticket renewal", default=None)
+    parser.add_argument("--resume-path", 
+                        help="Directory name of the previous experiment to resume (e.g., 'train_tune_2025-04-13_22-33-48'). "
+                             "Can be either the directory name within storage_path or a full path.",
+                        default=None)
+    parser.add_argument("--resume-checkpoint", action="store_true",
+                        help="Use 'CHECKPOINT_DIR' mode instead of experiment directory. "
+                             "This tells Ray to directly restore from a specific checkpoint.",
+                        default=False)
 
     args = parser.parse_args()
 
     cfg = args.cfg
     OUT_MODEL_DIR = args.model_save_dir
     model_name = args.model_name
-    num_epochs = args.num_epochs
+    epochs_per_trial = args.epochs_per_trial
+    num_trials = args.num_trials
+    kerberos_password = args.kerberos_password
+    resume_path = args.resume_path
+
+    # Start Kerberos ticket renewal in background
+    renewal_thread = renew_kerberos_ticket(kerberos_password)
+    print("Started Kerberos ticket renewal process")
 
     # train on the GPU or on the CPU, if a GPU is not available
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -314,44 +401,58 @@ if __name__ == "__main__":
     # Define hyperparameter search space
     config = {
         "cfg_path": cfg,  # Now using absolute path
+        "epochs_per_trial": epochs_per_trial,  # Add epochs_per_trial to config
         
         # Data augmentation params
-        "horizontal_flip_p": tune.uniform(0.3, 0.7),
-        "vertical_flip_p": tune.uniform(0.2, 0.7),
-        "rotate90_p": tune.uniform(0.3, 0.7),
+        "horizontal_flip_p": tune.uniform(0.0, 0.7),
+        "vertical_flip_p": tune.uniform(0.0, 0.7),
+        "rotate90_p": tune.uniform(0.0, 0.7),
         "rotate_degree": tune.uniform(1.0, 50.0),
-        "translate": tune.uniform(0.1, 0.3),
-        "scale": tune.uniform(0, 0.3),
-        "affine_p": tune.uniform(0.6, 0.9),
-        "clahe_p": tune.uniform(0.8, 1.0),
+        "translate": tune.uniform(0.0, 0.3),
+        "scale": tune.uniform(0.0, 0.3),
+        "affine_p": tune.uniform(0.0, 0.9),
+        
+        # Blur augmentation params
+        "motion_blur_limit": tune.choice([3, 5, 7]),
+        "motion_blur_p": tune.uniform(0.0, 0.5),
+        "median_blur_limit": tune.choice([3, 5, 7]),
+        "median_blur_p": tune.uniform(0.0, 0.4),
+        "blur_limit": tune.choice([3, 5, 7]),
+        "blur_p": tune.uniform(0.0, 0.4),
+        
+        # CLAHE params
+        "clahe_p": tune.uniform(0.0, 1.0),
         "clahe_clip_min": tune.uniform(1.0, 2.0),
-        "clahe_clip_max": tune.uniform(3.0, 4.0),
+        "clahe_clip_max": tune.uniform(2.0, 4.0),
         
         # Training params
-        "weight_decay": tune.uniform(0.003, 0.005),
+        "weight_decay": tune.uniform(0.0003, 0.0008),
         "scheduler": tune.choice(["step", "cosine"]),
         "T_max": tune.choice([5, 8, 10]),
     }
 
-    # Initialize Ray
     ray.init()
 
     # Define ASHA scheduler for early stopping with metric and mode
     scheduler = ASHAScheduler(
-        max_t=100,  # Maximum number of training iterations
-        grace_period=100,
+        max_t=epochs_per_trial,  # Maximum number of training iterations
+        grace_period=min(epochs_per_trial, 3),  # Allow at least 3 epochs before stopping
         reduction_factor=2,
         metric="valid_loss",  # The metric to optimize
         mode="min"           # We want to minimize the validation loss
     )
 
-    # Run hyperparameter tuning without duplicate metric and mode
+    
     analysis = tune.run(
         train_tune,
         config=config,
-        num_samples=100,
+        num_samples=num_trials,  # Use num_trials instead of num_epochs
         scheduler=scheduler,
-        resources_per_trial={"cpu": 0, "gpu": 1}
+        resources_per_trial={"cpu": 0, "gpu": 1},
+        resume="AUTO+ERRORED",
+        keep_checkpoints_num=2,  # Keep the 2 most recent checkpoints
+        storage_path=os.path.abspath(os.path.join(OUT_MODEL_DIR, "ray_results")),
+        name=resume_path
     )
 
     # Get best config and train final model
@@ -361,3 +462,77 @@ if __name__ == "__main__":
     # Save best config
     with open(os.path.join(OUT_MODEL_DIR, "best_config.yaml"), "w") as f:
         yaml.dump(best_config, f)
+
+    # Add visualization for hyperparameter tuning
+    # Create plots directory if it doesn't exist
+    plots_dir = os.path.join(OUT_MODEL_DIR, "plots")
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # 1. Plot training curves for all trials
+    dfs = analysis.trial_dataframes
+    fig, ax = plt.subplots(figsize=(12, 8))
+    for trial_id, df in dfs.items():
+        if 'valid_loss' in df.columns:
+            ax.plot(df['training_iteration'], df['valid_loss'], alpha=0.3, label=trial_id[:6])
+    
+    ax.set_xlabel('Training Iterations')
+    ax.set_ylabel('Validation Loss')
+    ax.set_title('Validation Loss Across Trials')
+    plt.savefig(os.path.join(plots_dir, "all_trials_validation_loss.png"))
+    plt.close()
+    
+    # 2. Plot parameter importance
+    from ray.tune.analysis import ExperimentAnalysis
+    param_importance = analysis.get_all_configs()
+    param_scores = []
+    
+    for param in best_config.keys():
+        if param != "cfg_path":  # Skip non-hyperparameters
+            try:
+                ax = plt.figure(figsize=(10, 6))
+                data = analysis.dataframe(metric="valid_loss", mode="min")
+                if param in data.columns:
+                    plt.scatter(data[param], data["valid_loss"])
+                    plt.xlabel(param)
+                    plt.ylabel("Valid Loss")
+                    plt.title(f"Impact of {param} on Validation Loss")
+                    plt.savefig(os.path.join(plots_dir, f"param_impact_{param}.png"))
+                    plt.close()
+            except Exception as e:
+                print(f"Could not plot parameter {param}: {e}")
+    
+    # 3. Plot parallel coordinates plot for the top trials
+    try:        
+        # Get the top 10 trials
+        top_trials = analysis.dataframe().sort_values("valid_loss").head(10)
+        
+        # Parameters to include in the plot (exclude non-numeric or constants)
+        plot_params = [p for p in best_config.keys() 
+                      if p != "cfg_path" and p != "scheduler"]
+        
+        # Create parallel coordinates plot
+        ax = plt.figure(figsize=(15, 8))
+        coords = analysis.dataframe()[plot_params + ["valid_loss"]].head(20)
+        
+        # Normalize each parameter to [0, 1] for plotting
+        for param in plot_params:
+            if param in coords.columns:
+                min_val = coords[param].min()
+                max_val = coords[param].max()
+                if max_val > min_val:
+                    coords[param] = (coords[param] - min_val) / (max_val - min_val)
+        
+        # Plot each trial as a line
+        for i, (_, row) in enumerate(coords.iterrows()):
+            xs = range(len(plot_params) + 1)
+            ys = [row[param] for param in plot_params] + [row["valid_loss"]]
+            plt.plot(xs, ys, 'o-', alpha=0.5)
+            
+        plt.xticks(range(len(plot_params) + 1), plot_params + ["valid_loss"])
+        plt.title("Parallel Coordinates Plot of Top Trials")
+        plt.savefig(os.path.join(plots_dir, "parallel_coordinates.png"))
+        plt.close()
+    except Exception as e:
+        print(f"Could not create parallel coordinates plot: {e}")
+        
+    print(f"Hyperparameter tuning plots saved to {plots_dir}")

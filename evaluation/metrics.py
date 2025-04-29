@@ -117,9 +117,20 @@ def plot_curve(px, py, save_dir, names: dict[int, str], xlabel, ylabel, show_max
         show_max (bool): If true, show the x-value that maximises y.
     """
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
-
-    avg_y = smooth(py.mean(0), 0.05)  # smoothed curve averaging each class' curve
-    max_i = avg_y.argmax()  # index that maximises avg_y
+    
+    # Handle empty py
+    if len(py) == 0:
+        print(f"Warning: No data found to plot {ylabel}-{xlabel} curve. Skipping.")
+        plt.close(fig)
+        return
+    
+    try:
+        avg_y = smooth(py.mean(0), 0.05)  # smoothed curve averaging each class' curve
+        max_i = avg_y.argmax()  # index that maximises avg_y
+    except Exception as e:
+        print(f"Warning: Error calculating average curve: {e}. Skipping.")
+        plt.close(fig)
+        return
 
     class_idxs = sorted(list(names.keys()))
 
@@ -147,7 +158,19 @@ def plot_pr_curve(px, py, ap, iou, save_dir="pr_curve.png", names=()):
     Adapted from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py
     """
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
-    py = np.stack(py, axis=1)
+    
+    # Handle empty py list
+    if len(py) == 0:
+        print("Warning: No precision values found to plot PR curve. Skipping PR curve plot.")
+        plt.close(fig)
+        return
+    
+    try:
+        py = np.stack(py, axis=1)
+    except ValueError as e:
+        print(f"Warning: Could not stack precision values: {e}. Skipping PR curve plot.")
+        plt.close(fig)
+        return
 
     class_idxs = sorted(list(names.keys()))
 
@@ -242,6 +265,36 @@ class ObjectDetectionMetrics:
         for i in range(len(self.detections)):
             pred = self.detections[i]
             gt = self.ground_truths[i]
+            
+            # Skip if either pred or gt is None or empty
+            if pred is None or gt is None or len(pred) == 0 or len(gt) == 0:
+                continue
+            
+            # Ensure pred and gt are tensors
+            if not isinstance(pred, torch.Tensor):
+                try:
+                    pred = torch.tensor(pred, device=self.device)
+                except:
+                    print(f"Warning: Could not convert prediction to tensor. Skipping image {i}.")
+                    continue
+                
+            if not isinstance(gt, torch.Tensor):
+                try:
+                    gt = torch.tensor(gt, device=self.device)
+                except:
+                    print(f"Warning: Could not convert ground truth to tensor. Skipping image {i}.")
+                    continue
+            
+            # Ensure pred and gt have the expected dimensions
+            if len(pred.shape) != 2 or len(gt.shape) != 2:
+                print(f"Warning: Unexpected dimensions for pred or gt at index {i}. Expected 2D tensors.")
+                continue
+                
+            # Make sure we have enough dimensions for indexing
+            if pred.shape[1] <= 5 or gt.shape[1] <= 4:
+                print(f"Warning: Not enough columns in pred or gt at index {i}. Skipping.")
+                continue
+                
             pred_cls = pred[:, -1]
             gt_cls = gt[:, -1]
             conf = pred[:, 4]
@@ -255,17 +308,28 @@ class ObjectDetectionMetrics:
             gt_cls_all.append(gt_cls)
 
             # calculate pairwise iou between pred and gt boxes
-            iou = box_iou(pred[:, :4], gt[:, :4])
+            try:
+                iou = box_iou(pred[:, :4], gt[:, :4])
+            except Exception as e:
+                print(f"Error calculating IoU for image {i}: {str(e)}")
+                print(f"pred shape: {pred.shape}, gt shape: {gt.shape}")
+                print(f"pred[:, :4] shape: {pred[:, :4].shape}, gt[:, :4] shape: {gt[:, :4].shape}")
+                continue
 
             # calculate pred_true for each prediction.
             # tensor[t, num_preds]
             correct = np.zeros((t, pred_cls.shape[0]))
 
-            # LxD matrix where L - labels, D - detections but todo: i really want to transpose this bc wtf
-            correct_class = gt_cls[:, None] == pred_cls
-            iou = iou.T
-            iou = iou * correct_class  # zero out the wrong classes
-            iou = iou.cpu().numpy()
+            # LxD matrix where L - labels, D - detections
+            try:
+                correct_class = gt_cls[:, None] == pred_cls
+                iou = iou.T
+                iou = iou * correct_class  # zero out the wrong classes
+                iou = iou.cpu().numpy()
+            except Exception as e:
+                print(f"Error processing classes for image {i}: {str(e)}")
+                continue
+                
             # pred_per_gt: tensor[t, num_gt]
             pred_per_gt = np.zeros((t, m)) - 1
 
@@ -298,6 +362,17 @@ class ObjectDetectionMetrics:
             num_preds_curr += n
             gt_per_pred_all.append(torch.tensor(gt_per_pred, dtype=torch.int, device=self.device))
             num_gt_curr += m
+
+        # Handle case where we have no valid predictions
+        if not pred_true_all:
+            print("Warning: No valid predictions found. Returning empty results.")
+            self.pred_true = torch.zeros((t, 0), device=self.device, dtype=torch.int)
+            self.gt_per_pred_all = torch.zeros((t, 0), device=self.device, dtype=torch.int)
+            self.pred_per_gt_all = torch.zeros((t, 0), device=self.device, dtype=torch.int)
+            self.conf = torch.zeros(0, device=self.device)
+            self.pred_cls = torch.zeros(0, device=self.device, dtype=torch.int)
+            self.gt_cls = torch.zeros(0, device=self.device, dtype=torch.int)
+            return
 
         # Concatenate the return lists into tensors
         self.pred_true = torch.cat(pred_true_all, axis=-1)
@@ -352,7 +427,7 @@ class ObjectDetectionMetrics:
                     
                     # For classes not in class_conf_thresholds, use the default threshold
                     default_mask = ~torch.tensor([pred[i, 5].item() in class_conf_thresholds for i in range(pred.shape[0])], 
-                                               device=pred.device)
+                                               device=pred.device, dtype=torch.bool)
                     default_mask = default_mask & (pred[:, 4] >= conf_threshold)
                     mask = mask | default_mask
                     
@@ -460,7 +535,7 @@ class ObjectDetectionMetrics:
 
         return matrix
 
-    def ap_per_class(self, plot=False, plot_all=False, prefix=""):
+    def ap_per_class(self, f1=False, plot=False, plot_all=False, prefix=""):
         """
         Calculates AP per class for each IOU threshold given.
         Adapted from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/utils/metrics.py.
@@ -472,6 +547,14 @@ class ObjectDetectionMetrics:
         Returns:
             ap (Tensor[t, num_classes]): AP for each class for each IOU threshold given.
         """
+        # Check if we have valid predictions
+        if self.pred_true.shape[1] == 0:
+            print("Warning: No valid detections found. Cannot calculate AP.")
+            # Return zeros for AP
+            ap = torch.zeros((self.iou_threshold.shape[0], len(self.idx_to_name.keys())), 
+                            dtype=torch.float64, device=self.device)
+            return ap
+            
         # turn the tensors into numpy arrays
         detection_true = self.pred_true.numpy(force=True)
         conf = self.conf.numpy(force=True)
@@ -489,6 +572,13 @@ class ObjectDetectionMetrics:
         # Get unique classes for which labels exist, and number of labels per class
         classes, num_labels = np.unique(gt_cls, return_counts=True)
         nc = classes.shape[0]  # number of classes
+        
+        if nc == 0:
+            print("Warning: No classes found in ground truth labels. Cannot calculate AP.")
+            # Return zeros for AP
+            ap = torch.zeros((t, len(self.idx_to_name.keys())), 
+                           dtype=torch.float64, device=self.device)
+            return ap
 
         # Confidence values at which to calculate precision and recall curves
         x = np.linspace(0, 1, 1000)
@@ -562,6 +652,11 @@ class ObjectDetectionMetrics:
                 plot_pr_curve(x, prec_values[ti], ap[ti], self.iou_threshold[ti],
                               os.path.join(self.save_dir, f"{prefix}_PR_curve_IOU={iou}.png"),
                               self.idx_to_name)
+        
+        
+        if f1:
+            i = smooth(f1_curve.mean(0), 0.1).argmax()
+            return ap,  f1_curve[:, i]
 
         return ap
 

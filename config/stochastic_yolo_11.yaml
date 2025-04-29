@@ -1,4 +1,5 @@
-# Parameters
+# Architecture definition for YOLO11 with 2 dropout layers added before the last C3K2 layer per detection head.
+
 nc: 4 # number of classes
 scales: # model compound scaling constants, i.e. 'model=yolo11n.yaml' will call yolo11.yaml with scale 'n'
   # [depth, width, max_channels]
@@ -31,20 +32,20 @@ head:
 
   - [-1, 1, nn.Upsample, [None, 2, "nearest"]]
   - [[-1, 4], 1, Concat, [1]] # cat backbone P3
-  - [-1, 1, nn.Dropout, [0.5]]    # First dropout before P3 head
-  - [-1, 1, nn.Dropout, [0.5]]    # Second dropout before P3 head
+  - [-1, 1, nn.Dropout, [0.75]]    # First dropout before P3 head
+  - [-1, 1, nn.Dropout, [0.75]]    # Second dropout before P3 head
   - [-1, 2, C3k2, [256, False]] # 16 (P3/8-small)
 
   - [-1, 1, Conv, [256, 3, 2]]
   - [[-1, 13], 1, Concat, [1]] # cat head P4
-  - [-1, 1, nn.Dropout, [0.5]]    # First dropout before P4 head
-  - [-1, 1, nn.Dropout, [0.5]]    # Second dropout before P4 head
+  - [-1, 1, nn.Dropout, [0.75]]    # First dropout before P4 head
+  - [-1, 1, nn.Dropout, [0.75]]    # Second dropout before P4 head
   - [-1, 2, C3k2, [512, False]] # 19 (P4/16-medium)
 
   - [-1, 1, Conv, [512, 3, 2]]
   - [[-1, 10], 1, Concat, [1]] # cat head P5
-  - [-1, 1, nn.Dropout, [0.5]]    # First dropout before P5 head
-  - [-1, 1, nn.Dropout, [0.5]]    # Second dropout before P5 head
+  - [-1, 1, nn.Dropout, [0.75]]    # First dropout before P5 head
+  - [-1, 1, nn.Dropout, [0.75]]    # Second dropout before P5 head
   - [-1, 2, C3k2, [1024, True]] # 22 (P5/32-large)
 
   - [[16, 19, 22], 1, Detect, [nc]] # Detect(P3, P4, P5)

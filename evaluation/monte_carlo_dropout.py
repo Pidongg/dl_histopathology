@@ -1,5 +1,6 @@
+# TODO: implement this in evaluator, instead of eval_ultralytics for YOLO. Delete this file.
+
 import os
-import torch
 import json
 from ultralytics.utils import LOGGER
 import yaml
@@ -27,121 +28,121 @@ def check_dropout_state(model, msg=""):
     return dropout_states
 
 
-def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30, is_yolo=False, input_size=640, class_conf_thresholds=None):
-    """
-    Perform multiple forward passes with dropout enabled.
-    Returns raw model outputs before NMS.
+# def monte_carlo_predictions(model, img, conf_thresh, iou_thresh, num_samples=30, is_yolo=False, input_size=640, class_conf_thresholds=None):
+#     """
+#     Perform multiple forward passes with dropout enabled.
+#     Returns raw model outputs before NMS.
     
-    Args:
-        model: YOLO model
-        img: Input image path
-        conf_thresh: Confidence threshold (float or list of floats for class-specific thresholds)
-        iou_thresh: IoU threshold for NMS
-        num_samples: Number of Monte Carlo samples
-        is_yolo: Whether using YOLO model (to enable dropout)
-        input_size: Input size for the model
-    """
-    infs_all = []
-    num_classes = 4 
+#     Args:
+#         model: YOLO model
+#         img: Input image path
+#         conf_thresh: Confidence threshold (float or list of floats for class-specific thresholds)
+#         iou_thresh: IoU threshold for NMS
+#         num_samples: Number of Monte Carlo samples
+#         is_yolo: Whether using YOLO model (to enable dropout)
+#         input_size: Input size for the model
+#     """
+#     infs_all = []
+#     num_classes = 4 
     
-    # Perform multiple forward passes
-    with torch.no_grad():
-        for i in range(num_samples):
-            if is_yolo:
-                enable_dropout(model)
+#     # Perform multiple forward passes
+#     with torch.no_grad():
+#         for i in range(num_samples):
+#             if is_yolo:
+#                 enable_dropout(model)
             
-            # Get raw model output (before NMS)
-            preds = model.predict(str(img), conf=conf_thresh, skip_nms=True, iou=iou_thresh)[0]
+#             # Get raw model output (before NMS)
+#             preds = model.predict(str(img), conf=conf_thresh, skip_nms=True, iou=iou_thresh)[0]
             
-            # nms requires preds to change from (batch_size, num_classes + 4 + num_masks, num_boxes) to (batch_size, num_boxes, num_classes + 4)
-            preds = preds[:, :num_classes+4, :]
-            preds = preds.transpose(-2, -1)
-            infs_all.append(preds.unsqueeze(2))
+#             # nms requires preds to change from (batch_size, num_classes + 4 + num_masks, num_boxes) to (batch_size, num_boxes, num_classes + 4)
+#             preds = preds[:, :num_classes+4, :]
+#             preds = preds.transpose(-2, -1)
+#             infs_all.append(preds.unsqueeze(2))
             
-        if num_samples > 1:
-            inf_mean = torch.mean(torch.stack(infs_all), dim=0)
-            infs_all.insert(0, inf_mean)
+#         if num_samples > 1:
+#             inf_mean = torch.mean(torch.stack(infs_all), dim=0)
+#             infs_all.insert(0, inf_mean)
             
-            inf_out = torch.cat(infs_all, dim=2)
-        else:
-            inf_out = infs_all[0]
+#             inf_out = torch.cat(infs_all, dim=2)
+#         else:
+#             inf_out = infs_all[0]
         
-        # Apply NMS and get sampled coordinates
-        # Use model's native dimensions for NMS
-        model_height, model_width = input_size, input_size
+#         # Apply NMS and get sampled coordinates
+#         # Use model's native dimensions for NMS
+#         model_height, model_width = input_size, input_size
 
-        # Clip coordinates before NMS
-        for batch_idx in range(inf_out.shape[0]):
-            for sample_idx in range(inf_out.shape[2]):
-                # Convert from xywh to xyxy for clipping
-                boxes_xyxy = data_utils.xywh2xyxy(inf_out[batch_idx, :, sample_idx, :4].clone())
-                # Clip to image boundaries
-                data_utils.clip_coords(boxes_xyxy, (model_height, model_width))
-                # For now, we'll directly use the clipped xyxy in non_max_suppression
-                inf_out[batch_idx, :, sample_idx, :4] = boxes_xyxy
-                # Set a flag to indicate we're now using xyxy format
-                use_xyxy_format = True
+#         # Clip coordinates before NMS
+#         for batch_idx in range(inf_out.shape[0]):
+#             for sample_idx in range(inf_out.shape[2]):
+#                 # Convert from xywh to xyxy for clipping
+#                 boxes_xyxy = data_utils.xywh2xyxy(inf_out[batch_idx, :, sample_idx, :4].clone())
+#                 # Clip to image boundaries
+#                 data_utils.clip_coords(boxes_xyxy, (model_height, model_width))
+#                 # For now, we'll directly use the clipped xyxy in non_max_suppression
+#                 inf_out[batch_idx, :, sample_idx, :4] = boxes_xyxy
+#                 # Set a flag to indicate we're now using xyxy format
+#                 use_xyxy_format = True
         
-        output, all_scores, sampled_coords = non_max_suppression(
-            inf_out,
-            conf_thres=conf_thresh,
-            iou_thres=iou_thresh,
-            multi_label=False,
-            max_width=model_width,
-            max_height=model_height,
-            use_xyxy_format=use_xyxy_format,
-            class_conf_thresholds=class_conf_thresholds
-        )
+#         output, all_scores, sampled_coords = non_max_suppression(
+#             inf_out,
+#             conf_thres=conf_thresh,
+#             iou_thres=iou_thresh,
+#             multi_label=False,
+#             max_width=model_width,
+#             max_height=model_height,
+#             use_xyxy_format=use_xyxy_format,
+#             class_conf_thresholds=class_conf_thresholds
+#         )
         
-        # Calculate scaling factor dynamically
-        image_width = 512  # Or get actual image dimensions
-        scale_factor = image_width / model_width
+#         # Calculate scaling factor dynamically
+#         image_width = 512  # Or get actual image dimensions
+#         scale_factor = image_width / model_width
         
-        # Process sampled coordinates if we have multiple samples
-        if num_samples > 1 and output[0] is not None and len(output[0]) > 0:
-            # Scale output boxes from model size (640x640) to image size (512x512)
-            output[0][:, :4] *= scale_factor
+#         # Process sampled coordinates if we have multiple samples
+#         if num_samples > 1 and output[0] is not None and len(output[0]) > 0:
+#             # Scale output boxes from model size (640x640) to image size (512x512)
+#             output[0][:, :4] *= scale_factor
             
-            # Use fixed dimensions for final image
-            height, width = 512, 512
+#             # Use fixed dimensions for final image
+#             height, width = 512, 512
             
-            # Process sampled coordinates for the first (and only) image in batch
-            sampled_boxes = data_utils.xywh2xyxy(sampled_coords[0].reshape(-1, 4)).reshape(sampled_coords[0].shape)
+#             # Process sampled coordinates for the first (and only) image in batch
+#             sampled_boxes = data_utils.xywh2xyxy(sampled_coords[0].reshape(-1, 4)).reshape(sampled_coords[0].shape)
             
-            # Scale sampled boxes from model size to image size
-            sampled_boxes *= scale_factor
+#             # Scale sampled boxes from model size to image size
+#             sampled_boxes *= scale_factor
             
-            # Clip coordinates to image boundaries
-            data_utils.clip_coords(sampled_boxes.reshape(-1, 4), (height, width))
+#             # Clip coordinates to image boundaries
+#             data_utils.clip_coords(sampled_boxes.reshape(-1, 4), (height, width))
             
-            # Calculate covariances for each detection (using scaled coordinates)
-            covariances = torch.zeros(sampled_boxes.shape[0], 2, 2, 2, device=output[0].device)
-            for det_idx in range(sampled_boxes.shape[0]):
-                top_left_cov = data_utils.cov(sampled_boxes[det_idx, :, :2])
-                bottom_right_cov = data_utils.cov(sampled_boxes[det_idx, :, 2:])
+#             # Calculate covariances for each detection (using scaled coordinates)
+#             covariances = torch.zeros(sampled_boxes.shape[0], 2, 2, 2, device=output[0].device)
+#             for det_idx in range(sampled_boxes.shape[0]):
+#                 top_left_cov = data_utils.cov(sampled_boxes[det_idx, :, :2])
+#                 bottom_right_cov = data_utils.cov(sampled_boxes[det_idx, :, 2:])
                 
-                covariances[det_idx, 0, ...] = top_left_cov
-                covariances[det_idx, 1, ...] = bottom_right_cov
+#                 covariances[det_idx, 0, ...] = top_left_cov
+#                 covariances[det_idx, 1, ...] = bottom_right_cov
             
-            # Ensure covariances are positive semi-definite
-            for det_idx in range(len(covariances)):
-                for i in range(2):
-                    cov_matrix = covariances[det_idx, i].cpu().numpy()
-                    if not data_utils.is_pos_semidef(cov_matrix):
-                        LOGGER.warning('Converting covariance matrix to near PSD')
-                        cov_matrix = data_utils.get_near_psd(cov_matrix)
-                        covariances[det_idx, i] = torch.tensor(cov_matrix, device=output[0].device)
+#             # Ensure covariances are positive semi-definite
+#             for det_idx in range(len(covariances)):
+#                 for i in range(2):
+#                     cov_matrix = covariances[det_idx, i].cpu().numpy()
+#                     if not data_utils.is_pos_semidef(cov_matrix):
+#                         LOGGER.warning('Converting covariance matrix to near PSD')
+#                         cov_matrix = data_utils.get_near_psd(cov_matrix)
+#                         covariances[det_idx, i] = torch.tensor(cov_matrix, device=output[0].device)
             
-            # Round values for smaller size
-            covariances = torch.round(covariances * 1e6) / 1e6
-        elif output[0] is not None and len(output[0]) > 0:
-            # If we only have one sample but still have valid output, apply scaling
-            output[0][:, :4] *= scale_factor
-            covariances = None
-        else:
-            covariances = None
+#             # Round values for smaller size
+#             covariances = torch.round(covariances * 1e6) / 1e6
+#         elif output[0] is not None and len(output[0]) > 0:
+#             # If we only have one sample but still have valid output, apply scaling
+#             output[0][:, :4] *= scale_factor
+#             covariances = None
+#         else:
+#             covariances = None
             
-    return output, all_scores, covariances
+#     return output, all_scores, covariances
 
 def save_mc_predictions_to_json(model, data_yaml, conf_thresh, save_path, num_samples=30, iou_thresh=0.6, is_yolo=False, input_size=640, class_conf_thresholds=None):
     """

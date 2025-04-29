@@ -11,8 +11,6 @@ from torchvision.utils import draw_segmentation_masks, draw_bounding_boxes
 import sys
 import os
 
-# Add project root to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data_preparation.data_utils import *
 
 
@@ -140,23 +138,21 @@ def bboxes_from_multiple_masks(mask_dir_path: os.path, out_dir, yolo=False):
         # show_bboxes(image_path, bboxes)
 
 
-def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False):
+def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False, device='cpu'):
     """
     Reads boxes from a txt file holding YOLO-format labels and outputs them in a tensor of
         (x_min, y_min, x_max, y_max) boxes along with class indices.
 
     Args:
         label_path: Path to a YOLO-format label .txt file
+        normalised: Whether to keep coordinates normalised or convert to pixel values (default: False)
+        device: Device to create tensors on (default: 'cpu')
 
     Returns:
         bboxes (Tensor[N, 4]): bbox coordinates extracted from label_path, in (x_min, y_min, x_max, y_max) format.
             Coordinates are unnormalised by default.
         labels (list[int]): Class index label for each bounding box
     """
-    device = (torch.device(f'cuda:{torch.cuda.current_device()}')
-              if torch.cuda.is_available()
-              else 'cpu')
-
     with open(label_path, "r") as f:
         # create an empty tensor
         bboxes = torch.FloatTensor().to(device)
@@ -182,7 +178,7 @@ def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False):
                 y_min = (y_centre - (height / 2)) * 512
                 y_max = (y_centre + (height / 2)) * 512
 
-            new_bbox = torch.Tensor([[x_min, y_min, x_max, y_max]]).to(device)
+            new_bbox = torch.tensor([[x_min, y_min, x_max, y_max]], device=device)
 
             bboxes = torch.cat([bboxes, new_bbox], axis=0)
 

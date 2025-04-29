@@ -1,7 +1,4 @@
 import os
-import sys
-# Add project root to Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ultralytics import YOLO
 import torch
@@ -9,21 +6,7 @@ from evaluator import SAHIYoloEvaluator, YoloEvaluator, RCNNEvaluator
 from data_preparation import data_utils
 import argparse
 import yaml
-import train_model.run_train_rcnn as run_train_rcnn
-import subprocess
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'pdq_evaluation')))
-
-def get_gpu_memory_usage():
-    """
-    Get the current memory usage for all available GPUs
-    Returns list of memory usage for each GPU in MB
-    """
-    try:
-        output = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used', '--format=csv,nounits,noheader'])
-        memory_used = [int(x) for x in output.decode('utf-8').strip().split('\n')]
-        return memory_used
-    except:
-        return []
+import train_model.rcnn_scripts.run_train_rcnn as run_train_rcnn
 
 def main():
     parser = argparse.ArgumentParser()
@@ -75,6 +58,9 @@ def main():
     parser.add_argument("--class_conf_thresh", type=str, 
                         help="Comma-separated list of confidence thresholds for each class, e.g. '0.3,0.5,0.7' or '[0.3,0.5,0.7]'", 
                         default=None)
+    parser.add_argument("--mc_dropout", action="store_true",
+                        help="Use Monte Carlo Dropout for R-CNN",
+                        default=False)
     args = parser.parse_args()
 
     model_path = args.model
@@ -166,7 +152,7 @@ def main():
                 return
         
         model = run_train_rcnn.get_model_instance_segmentation(num_classes, stochastic=stochastic, 
-                                                               all_scores=True, skip_nms=stochastic, 
+                                                               all_scores=True, skip_nms=args.mc_dropout, 
                                                                conf_thresh=float(args.conf), 
                                                                iou_thresh=float(args.iou), 
                                                                dropout_rate=float(args.dropout_rate),
@@ -189,7 +175,7 @@ def main():
                                   class_dict=class_dict,
                                   save_dir=save_dir,
                                   save_predictions=args.save_predictions,
-                                  mc_dropout=stochastic,
+                                  mc_dropout=args.mc_dropout,
                                   num_samples=args.num_samples,
                                   iou_thresh=float(args.iou),
                                   conf_thresh=float(args.conf),
@@ -197,7 +183,8 @@ def main():
                                   save_rvc=args.save_rvc,
                                   data_yaml=cfg)
         
-
+    if args.save_predictions:
+        return 
     ap = evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
     print("AP per class:", ap)
     matrix = evaluator.confusion_matrix(conf_threshold=0.25, all_iou=False, plot=True, prefix=prefix, class_conf_thresholds=class_specific_thresholds)

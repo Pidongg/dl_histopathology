@@ -81,30 +81,16 @@ def get_unused_filename(out_dir, filename, extension):
     return path_to_use
 
 def get_train_transform():
+    """
+    Transformations for training data, with best hyperparameters found through tuning.
+    """
     return A.Compose([
-        # Horizontal and vertical flips (matching YOLO's fliplr/flipud)
-        A.HorizontalFlip(p=0.413),  # fliplr: 0.572
-        A.VerticalFlip(p=0.256),    # flipud: 0.259
-        A.RandomRotate90(p=0.342),
-        
-        # Affine transforms combining rotation, translation, scale, and shear
-        A.Affine(
-            # Rotation: YOLO's degrees=1.34 means ±1.34°
-            rotate=(-14.6, 14.6),
-            
-            # Translation: YOLO's translate=0.206 means ±20.6% of image size
-            translate_percent=(-0.151, 0.151),
-            
-            # Scale: YOLO's scale=0.264 means random uniform in [1-0.264, 1+0.264]
-            scale=(1-0.236, 1+0.236),  # 1 ± 0.264
-            
-            # Common settings
-            interpolation=cv2.INTER_LINEAR,
-            mask_interpolation=cv2.INTER_NEAREST,
-            p=0.757  # High probability since this combines multiple transforms
-        ),
-
-        A.CLAHE(p=0.981, clip_limit=(1.754, 3.423), tile_grid_size=(8, 8)),
+        A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
+        A.RandomRotate90(p=0.5),
+        A.MotionBlur(p=0.2),
+        A.MedianBlur(blur_limit=3, p=0.1),
+        A.Blur(blur_limit=3, p=0.1),
         ToTensorV2(p=1.0),
     ], bbox_params={
         'format': 'pascal_voc',
@@ -113,6 +99,9 @@ def get_train_transform():
 
 
 def get_valid_transform():
+    """
+    Transformations for validation data.
+    """
     return A.Compose([
         ToTensorV2(p=1.0),
     ], bbox_params={
@@ -120,8 +109,10 @@ def get_valid_transform():
         'label_fields': ['labels']
     })
 
-
-def get_model_instance_segmentation(num_classes, stochastic=False, all_scores=False, skip_nms=False, conf_thresh=None, iou_thresh=None, dropout_rate=0.5):
+def get_model_instance_segmentation(num_classes, stochastic=False, all_scores=False, skip_nms=False, conf_thresh=None, iou_thresh=None, dropout_rate=0.5, class_conf_thresh=None):
+    """
+    Get a pre-trained instance segmentation model.
+    """
     # load an instance segmentation model pre-trained on COCO
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(
         weights="DEFAULT")
@@ -132,12 +123,11 @@ def get_model_instance_segmentation(num_classes, stochastic=False, all_scores=Fa
             r.fg_bg_sampler.batch_size_per_image, r.fg_bg_sampler.positive_fraction,
             r.box_coder.weights, r.score_thresh, r.nms_thresh, r.detections_per_img,
             r.mask_roi_pool, r.mask_head, r.mask_predictor,
-            r.keypoint_roi_pool, r.keypoint_head, r.keypoint_predictor, skip_nms)
+            r.keypoint_roi_pool, r.keypoint_head, r.keypoint_predictor, skip_nms, class_conf_thresh)
         model.roi_heads = new_roi_heads
     # Add dropout layers before the last 2 conv layers in the box head
     box_head = model.roi_heads.box_head
     layers = list(box_head.children())
-    
     # Create new Sequential module
     new_layers = []
 
@@ -302,7 +292,7 @@ if __name__ == "__main__":
     # define training and validation data loaders
     data_loader_train = DataLoader(
         dataset,
-        batch_size=2,
+        batch_size=4,
         shuffle=True,
         num_workers=4,
         collate_fn=collate_fn
@@ -338,8 +328,8 @@ if __name__ == "__main__":
     # and a learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.StepLR(
         optimizer,
-        step_size=2,
-        gamma=0.2
+        step_size=3,
+        gamma=0.1
     )
 
     # save the state dict of the model with the lowest loss on the validation step throughout training

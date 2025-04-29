@@ -1,16 +1,18 @@
-data: "/local/scratch/pz286/dl_histopathology/config/tau_data_cortical.yaml"
-epochs: 70
+data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
+epochs: 130
 iterations: 50
 optimizer: AdamW
 plots: true
-save: false
+save: true
 val: false
-cache: true
-batch: -1
-fraction: 0.8    # Use subset of data for faster tuning
+batch: 32
+fraction: 0.7   # Use subset of data for faster tuning
 
-lr0: 0.0001
+weight_decay: 0.0001
+
+lr0: 0.001
 lrf: 0.01
+
 hsv_h: 0
 hsv_s: 0
 hsv_v: 0
@@ -18,7 +20,12 @@ perspective: 0.0
 bgr: 0.0
 mosaic: 0
 mixup: 0.0
-
 erasing: 0
-auto_augment: False
 
+degrees: 1.34
+translate: 0.206
+flipud: 0.259
+fliplr: 0.572
+scale: 0.264
+shear: 2.8
+auto_augment: False

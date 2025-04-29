@@ -1,12 +1,11 @@
-data: "C:/Users/peiya/Desktop/dissertation/dl_histopathology/config/tau_data_laptop.yaml"
-epochs: 300
+data: "/local/scratch/pz286/dl_histopathology/config/tau_data.yaml"
+epochs: 200
 optimizer: 'AdamW'
 plots: True
 val: True
 batch: -1
-fraction: 0.1
 
-weight_decay: 0.0001
+weight_decay: 0.0005
 
 lr0: 0.001
 lrf: 0.01
@@ -24,6 +23,6 @@ degrees: 1.34
 translate: 0.206
 flipud: 0.259
 fliplr: 0.572
-scale: 0.264
-shear: 2.8
+scale: 0.0
+shear: 0.0
 auto_augment: False

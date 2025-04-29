@@ -7,14 +7,7 @@ from ultralytics import YOLO
 import argparse
 import cv2
 import os
-import sys
-from PIL import Image
 
-# Add project root to path for imports
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(project_root)
-
-# Import existing label reading function
 from data_preparation.image_labelling import bboxes_from_yolo_labels
 
 # Custom modules for SHAP integration
@@ -33,6 +26,8 @@ class CastNumpy(torch.nn.Module):
         image = torch.from_numpy(image).to(self.device)
         if image.ndimension() == 3:
             image = image.unsqueeze(0)  # Add batch dimension
+
+        # double check
         image = image.half() if self.device == 'cuda' else image.float()
         return image
 
@@ -286,7 +281,8 @@ def run_shap_analysis(model_path, image_path, target_class, target_box,
         title += f", Confidence: {confidence:.3f}"
     plt.title(title)
     plt.imshow(image, alpha=0.7)
-    plt.imshow(normalized_shap, cmap=plt.cm.seismic, alpha=0.5, vmin=0, vmax=1)
+    shap_im = plt.imshow(normalized_shap, cmap=plt.cm.seismic, alpha=0.5, vmin=0, vmax=1)
+    plt.colorbar(shap_im, label='SHAP value (Blue: negative, Red: positive)')
     
     # Add detection bounding box (green)
     rect = patches.Rectangle(
@@ -576,7 +572,6 @@ def main():
     parser.add_argument("-class_names", type=str, default=None, help="Comma-separated list of class names")
     
     args = parser.parse_args()
-    
     # Parse super pixel sizes and sample numbers
     super_pixel_sizes = [int(x) for x in args.spx.split(',')]
     num_samples_list = [int(x) for x in args.samples.split(',')]

@@ -1,9 +1,6 @@
-# Classes for preparing the dataset: splitting images and masks into patches,
-#   dividing the dataset into train, test and validation sets, and preparing bounding box labels.
-
-from skimage.util.shape import view_as_windows
-from skimage.util import img_as_ubyte
-from skimage import io
+# Classes for preparing the dataset: splitting images and masks into patches and preparing bounding box labels. BCSSPreparer class and `get_train_test_val_img_lists` method are preserved
+# from the original repo, but not used for my project.
+# Created `separate_by_tiles_dict` method to split the dataset into train/validation/test sets according to a dictionary specifying which slides belong to which set instead.
 
 import math
 import tqdm
@@ -11,11 +8,11 @@ import os
 import glob
 import torch
 import shutil
+
+from data_preparation import data_utils, image_labelling, qupath_label_preparation
+from skimage import io
+from skimage.util import img_as_ubyte, shape
 from collections import defaultdict
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from data_preparation import data_utils, image_labelling
-from data_preparation.qupath_label_preparation import LabelPreparer
 
 
 class DataPreparer:
@@ -34,11 +31,11 @@ class DataPreparer:
     Methods:
         get_train_test_val_img_lists: Get image path lists for training, testing, and validation sets
             according to the provided splitting ratio.
+
     """
 
     def __init__(self, in_root_dir, in_img_dir, prepared_root_dir, prepared_img_dir, prepared_label_dir):
         super().__init__()
-        # validate arguments
         if not os.path.exists(in_root_dir):
             raise Exception("Input directory does not exist")
 
@@ -88,9 +85,8 @@ class DataPreparer:
         Print the number of images in each directory in the prepared image directory,
             along with the number of objects per image.
         """
-        root_img_dir = "M:/Unused/TauCellDL/images"
-        root_label_dir = os.path.join(
-            self.prepared_root_dir, self.prepared_label_dir)
+        root_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir)
+        root_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
 
         sets = [f for f in os.listdir(root_img_dir)]
 
@@ -200,13 +196,13 @@ class BCSSPreparer(DataPreparer):
             mask = io.imread(mask_path)
 
             # divide image into patches
-            img_patches = view_as_windows(image,
+            img_patches = shape.view_as_windows(image,
                                           (self.patch_w, self.patch_h, 3),
                                           (3 * self.patch_w//4, 3 * self.patch_h//4, 3))  # overlap of 25%
             img_patches = img_patches.reshape(-1,
                                               self.patch_w, self.patch_h, 3)
 
-            mask_patches = view_as_windows(mask,
+            mask_patches = shape.view_as_windows(mask,
                                            (self.patch_w, self.patch_h),
                                            (3 * self.patch_w//4, 3 * self.patch_h//4))
             mask_patches = mask_patches.reshape(-1, self.patch_w, self.patch_h)
@@ -318,10 +314,13 @@ class TauPreparer(DataPreparer):
         in_root_dir (Path), in_img_dir (str), in_label_dir (str), prepared_root_dir (Path), prepared_img_dir (str),
         prepared_label_dir (str)
         class_to_idx (dict[str, int]): A map of class names to indices. Hard coded to match the tau dataset.
+        empty_tiles_required (dict[str, int]): A dictionary mapping slide IDs to the number of empty tiles to add.
+        with_segmentation (bool): If we are also processing the slides for segmentation. For segmentation masks, we treat them the same way as corresponding images.
+        preprocessed_labels (bool): If the labels have already been preprocessed, we can skip the unlabelled objects removal step.
 
     Methods:
-        prepare_labels_for_yolo: Prepares labels from text files holding all the labels in each slide,
-            by filtering out unlabelled annotations, dividing them by tile, and removing tiles with no annotations.
+        prepare_labels_for_yolo: Prepares labels from text files holding all the labels in each slide, 
+            by filtering out unlabelled annotations, dividing them by tile, handling cut-off objects, and for each slide, only keep a specified number of tiles with no objects.
         train_test_val_split: Splits the dataset train/test/val sets.
         show_bboxes: Visualises the boxes on images in one of the train/test/val sets.
         count_objects: Count the number of images per set along with number of objects per class.
@@ -341,13 +340,13 @@ class TauPreparer(DataPreparer):
             'TA': 0,
             'CB': 1,
             'NFT': 2,
-            'Others': 3,
-            'coiled': 1,
+            'Others': 3, # Confirmed with pathologist: this class is used as a synonym for tau fragments in some slides.
+            'coiled': 1, # Confirmed with pathologist: this class is used as a synonym for CB in some slides.
             'tau_fragments': 3
         }
         self.empty_tiles_required = empty_tiles_required
         self.with_segmentation = with_segmentation
-        self.preprocessed_labels = preprocessed_labels
+        self.preprocessed_labels = preprocessed_labels 
 
     def prepare_labels_for_yolo(self):
         """
@@ -358,31 +357,30 @@ class TauPreparer(DataPreparer):
         root_label_dir = os.path.join(
             self.in_root_dir, self.in_label_dir)
         root_img_dir = os.path.join(
-            self.in_root_dir, self.in_img_dir)
+            self.prepared_root_dir, self.prepared_img_dir)
         out_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir)
 
         if not os.path.exists(out_dir):
             os.makedirs(out_dir)
 
-        label_preparer = LabelPreparer(root_label_dir=root_label_dir,
-                                        root_img_dir=root_img_dir,
-                                        out_dir=out_dir,
-                                        class_to_idx=self.class_to_idx, 
-                                        with_segmentation=self.with_segmentation,
-                                        preprocessed_labels=self.preprocessed_labels)
-        # print("\nCreating filtered detection lists...")
-        # label_preparer.remove_unlabelled_objects()
+        label_preparer = qupath_label_preparation.LabelPreparer(root_label_dir=root_label_dir,
+                                       root_img_dir=root_img_dir,
+                                       out_dir=out_dir,
+                                       class_to_idx=self.class_to_idx,
+                                       with_segmentation=self.with_segmentation,
+                                       preprocessed_labels=self.preprocessed_labels)
+        print("\nCreating filtered detection lists...")
+        label_preparer.remove_unlabelled_objects()
 
-        # print("\nSeparating labels by tile for each slide...")
-        # # label_preparer.separate_tiles_with_cut_log()
-        # label_preparer.generate_cut_log_per_tile(area_thresholds=[0.1, 0.225, 0.1, 0.3], length_threshold=16)
-        # label_preparer.separate_labels_by_tile(area_thresholds=[0.1, 0.225, 0.195, 0.4], length_threshold=16)
+        print("\nSeparating labels by tile for each slide...")
+        label_preparer.separate_labels_by_tile(
+            area_thresholds=[0.1, 0.225, 0.195, 0.4], length_threshold=16)
 
-        # print("\nDeleting images/labels with empty label files...")
+        print("\nDeleting images/labels with empty label files...")
         label_preparer.filter_files_with_no_labels(inplace=False)
 
-        # if self.empty_tiles_required is not None:
-        #     label_preparer.add_empty_tiles(self.empty_tiles_required)
+        if self.empty_tiles_required is not None:
+            label_preparer.add_empty_tiles(self.empty_tiles_required)
 
     def train_test_val_split(self, train: float, test: float, valid: float):
         """
@@ -459,20 +457,19 @@ class TauPreparer(DataPreparer):
                 # delete empty slide directory
                 os.rmdir(in_img_dir)
                 os.rmdir(in_label_dir)
-    
-    def show_bboxes(self, set_type: str, img_dir: str, label_dir: str, ext: str = ""):
+
+    def show_bboxes(self, set_type: str):
         """
         Displays bboxes from a certain set, one image at a time.
 
         Args:
             set_type (str): Name of set to view masks and bboxes from (e.g. "train", "test", "valid").
         """
-        # img_paths = data_utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
-        #                                                          self.prepared_img_dir,
-        #                                                          set_type),
-        #                                             ".png")
-        img_paths = data_utils.list_files_of_a_type(img_dir,
-                                                    ".png")
+        img_paths = data_utils.list_files_of_a_type(os.path.join(self.prepared_root_dir,
+                                                                 self.prepared_img_dir,
+                                                                 set_type),
+                                                     ".png")
+
         class_to_colour = {
             0: "green",
             1: "#19ffe8",  # cyan
@@ -484,16 +481,10 @@ class TauPreparer(DataPreparer):
             filename = data_utils.get_filename(img_path)
             print("viewing", filename)
 
-            label_path = os.path.join(
-                label_dir, filename + ext+".txt")
-            bboxes, labels = image_labelling.bboxes_from_yolo_labels(
-                label_path)
-            if len(bboxes) == 0:
-                continue    
-            print(bboxes)
+            label_path = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type, filename + ".txt")
+            bboxes, labels = image_labelling.bboxes_from_yolo_labels(label_path)
             colours = [class_to_colour[ci] for ci in labels]
-            image_labelling.show_bboxes(
-                img_path, bboxes, labels=labels, colours=colours)
+            image_labelling.show_bboxes(img_path, bboxes, labels=labels, colours=colours)
             _ = input("enter to continue")
 
     def separate_by_tiles_dict(self, tiles_dict: dict):
@@ -511,9 +502,11 @@ class TauPreparer(DataPreparer):
         """
         # Create target directories if they don't exist
         for set_type in tiles_dict.keys():
-            target_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir, set_type)
-            target_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type)
-            
+            target_img_dir = os.path.join(
+                self.prepared_root_dir, self.prepared_img_dir, set_type)
+            target_label_dir = os.path.join(
+                self.prepared_root_dir, self.prepared_label_dir, set_type)
+
             if not os.path.exists(target_img_dir):
                 os.makedirs(target_img_dir)
             if not os.path.exists(target_label_dir):
@@ -521,32 +514,36 @@ class TauPreparer(DataPreparer):
 
         # For each set type (only train and validation)
         for set_type, regions in tiles_dict.items():
-                
+
             print(f"\nProcessing {set_type} set...")
-            
+
             # For each region (bg/cortical/dn)
             for region, slide_ids in regions.items():
                 print(f"Processing {region} region...")
-                
+
                 # For each slide in this region
                 for slide_id in slide_ids:
                     # Source directories
-                    src_img_dir = os.path.join(self.in_root_dir, self.in_img_dir, f"{slide_id}kept")
-                    src_label_dir = os.path.join(self.in_root_dir, self.in_label_dir, f"{slide_id}kept")
-                    
+                    src_img_dir = os.path.join(
+                        self.prepared_root_dir, self.prepared_img_dir, slide_id)
+                    src_label_dir = os.path.join(
+                        self.prepared_root_dir, self.prepared_label_dir, slide_id)
+
                     if not os.path.exists(src_img_dir):
-                        print(f"Warning: Image directory not found for slide {slide_id}")
+                        print(
+                            f"Warning: Image directory not found for slide {slide_id}")
                         continue
                     if not os.path.exists(src_label_dir):
-                        print(f"Warning: Label directory not found for slide {slide_id}")
+                        print(
+                            f"Warning: Label directory not found for slide {slide_id}")
                         continue
 
                     # Target directories with slide ID
-                    target_slide_img_dir = os.path.join(self.prepared_root_dir, self.prepared_img_dir, set_type, str(slide_id))
-                    target_slide_label_dir = os.path.join(self.prepared_root_dir, self.prepared_label_dir, set_type, str(slide_id))
-                    
-                    print(f"Moving folder for slide {slide_id}...")
-                    
+                    target_slide_img_dir = os.path.join(
+                        self.prepared_root_dir, self.prepared_img_dir, set_type, str(slide_id))
+                    target_slide_label_dir = os.path.join(
+                        self.prepared_root_dir, self.prepared_label_dir, set_type, str(slide_id))
+
                     # Move entire directories
                     shutil.move(src_img_dir, target_slide_img_dir)
                     shutil.move(src_label_dir, target_slide_label_dir)

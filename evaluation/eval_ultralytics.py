@@ -4,7 +4,6 @@ import argparse
 import torch
 from ultralytics.utils import LOGGER
 from confusion_matrix_utils import plot_confusion_matrix, save_interactive_confusion_matrix
-import json
 import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'pdq_evaluation')))
@@ -112,14 +111,14 @@ def main():
             data=args.cfg,
             conf=args.conf,
             iou=float(args.iou),
-            class_conf_thresholds=class_conf_thresholds
+            class_conf_thresholds=class_conf_thresholds,
+            imgsz = int(args.input_size)
         )
 
         # Print metrics
         LOGGER.info(f"mAP50-95: {metrics.box.map:.4f}")
         LOGGER.info(f"mAP50: {metrics.box.map50:.4f}")
-        LOGGER.info(f"mAP75: {metrics.box.map75:.4f}")
-        LOGGER.info(f"Per-class mAP50-95: {metrics.box.maps}")
+        LOGGER.info(f"Per-class F1: {metrics.box.f1}")
 
         # Plot confusion matrix
         confusion_matrix = metrics.confusion_matrix

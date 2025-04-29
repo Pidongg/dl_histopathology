@@ -6,7 +6,7 @@ import os
 import cv2
 import numpy as np
 
-from . import image_labelling, data_utils
+from . import image_labelling
 from torchvision.transforms import v2 as T
 
 class RCNNDataset(torch.utils.data.Dataset):
@@ -58,7 +58,7 @@ class RCNNDataset(torch.utils.data.Dataset):
             os.makedirs(os.path.dirname(label_path), exist_ok=True)
 
             # box coordinates and labels are extracted from the corresponding yolo file
-            boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False)
+            boxes, labels = image_labelling.bboxes_from_yolo_labels(label_path, normalised=False, device='cpu')
 
             # Move tensors to CPU before converting to numpy if needed
             if isinstance(boxes, torch.Tensor):

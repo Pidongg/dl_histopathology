@@ -11,15 +11,19 @@ def pipeline = new Pipeline()
 // Create translator
 def translator = new YoloV8Translator.Builder()
         .setPipeline(pipeline)
-        .optThreshold(0.5f)
+        .optThreshold(0.01f)
         .build()
 
 // Create file URI for the model
-def modelFile = new File('C:/Users/peiya/Downloads/train26/weights/best.torchscript')
+def modelFile = new File("C:/Users/peiya/Desktop/train16/weights/best.torchscript")
 def modelUri = modelFile.toURI()
 
-// Create detector with input size 640 
-def detector = new DjlObjectDetector("PyTorch", modelUri, translator, 640, 0.0)
+// Create detector with input size 640, overlap percentage between adjacent tiles 0, iou threshold 0.45, default confidence 0.01
+def detector = new DjlObjectDetector("PyTorch", modelUri, translator, 640, 0.0, 0.45, 0.01)
+
+detector.setClassThreshold("TA", 0.06)
+detector.setClassThreshold("NFT", 0.06)
+
 
 try {
     // Clear existing detections
@@ -43,6 +47,7 @@ try {
         print("Detection was interrupted")
     }
     
-} finally {
-    detector.close()
+} catch (Exception e) {
+    print("Error during detection: " + e.getMessage())
+    e.printStackTrace()
 }
