@@ -1,3 +1,4 @@
+# runs SHAP analysis on a batch of images with a YOLO model.
 import os
 import argparse
 from shap_analysis import analyze_all_detections
@@ -28,7 +29,6 @@ def main():
     
     args = parser.parse_args()
     
-    # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
     
     # Process each file with its specified superpixel sizes

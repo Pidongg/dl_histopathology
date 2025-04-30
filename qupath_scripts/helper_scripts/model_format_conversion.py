@@ -1,3 +1,4 @@
+# Converts the model to torchscript format, to run custom inference on QuPath.
 from ultralytics import YOLO
 
 # Load your trained model

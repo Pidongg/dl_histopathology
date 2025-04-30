@@ -1,5 +1,5 @@
 """
-Patch Ultralytics
+The following code is from https://github.com/ultralytics/ultralytics/issues/2863#issuecomment-2259399447
 """
 import ultralytics.engine.results
 import ultralytics.utils.ops

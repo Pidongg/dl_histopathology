@@ -1,3 +1,4 @@
+# runs SHAP analysis on a single image with a YOLO model.
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,7 +11,6 @@ import os
 
 from data_preparation.image_labelling import bboxes_from_yolo_labels
 
-# Custom modules for SHAP integration
 class CastNumpy(torch.nn.Module):
     """Converts NumPy arrays to PyTorch tensors."""
     def __init__(self, device='cuda'):
@@ -27,12 +27,11 @@ class CastNumpy(torch.nn.Module):
         if image.ndimension() == 3:
             image = image.unsqueeze(0)  # Add batch dimension
 
-        # double check
         image = image.half() if self.device == 'cuda' else image.float()
         return image
 
 class OD2Score(torch.nn.Module):
-    """Converts YOLOv8 outputs to a scalar score for a target object."""
+    """Converts YOLO11 outputs to a scalar score for a target object."""
     def __init__(self, target_class, target_box, conf_thresh=0.25):
         """
         Args:
@@ -53,7 +52,6 @@ class OD2Score(torch.nn.Module):
             return score
             
         if hasattr(results[0], 'boxes'):
-            # For YOLOv8+ format
             boxes = results[0].boxes  # Get all boxes for the first image
             if len(boxes) == 0:
                 return score
@@ -173,7 +171,7 @@ def run_shap_analysis(model_path, image_path, target_class, target_box,
                       super_pixel_size=16, num_samples=1000, output_path=None,
                       confidence=None, gt_label_path=None, class_names=None):
     """
-    Run SHAP analysis on a single image with a YOLOv8 model.
+    Run SHAP analysis on a single image with a YOLO11 model.
     
     Args:
         model_path: Path to trained model .pt file
@@ -453,7 +451,7 @@ def analyze_all_detections(model_path, image_path, super_pixel_size=16,
             output_path = os.path.join(output_dir, filename)
         
         # Pass confidence to run_shap_analysis
-        shap_values = run_shap_analysis(
+        _ = run_shap_analysis(
             model_path=model_path,
             image_path=image_path,
             target_class=detection['class_id'],
@@ -488,7 +486,6 @@ def compare_shap_results(model_path, image_path, super_pixel_sizes, num_samples_
     
     # Get all detections
     detections = get_detections(model, image_path, conf_thresh)
-    print(f"Found {len(detections)} detections above confidence threshold {conf_thresh}")
     
     # Create output directory if needed
     if output_dir:
@@ -511,7 +508,6 @@ def compare_shap_results(model_path, image_path, super_pixel_sizes, num_samples_
         possible_label_paths = [
             os.path.join(gt_label_dir, f"{img_basename}.txt"),
             os.path.join(gt_label_dir, img_basename, f"{img_basename}.txt"),
-            os.path.join(gt_label_dir, f"{img_basename}.labels.txt")
         ]
         
         for path in possible_label_paths:
@@ -587,9 +583,7 @@ def main():
         image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff')
         for img_file in os.listdir(args.img):
             if img_file.lower().endswith(image_extensions):
-                img_path = os.path.join(args.img, img_file)
-                print(f"\nProcessing image: {img_file}")
-                
+                img_path = os.path.join(args.img, img_file)                
                 try:
                     compare_shap_results(
                         model_path=args.pt,
@@ -604,7 +598,6 @@ def main():
                 except Exception as e:
                     print(f"Error processing {img_file}: {str(e)}")
     else:
-        # Process single image
         compare_shap_results(
             model_path=args.pt,
             image_path=args.img,

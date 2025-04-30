@@ -1,7 +1,4 @@
 import os
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import torch
 import tqdm
 from data_preparation import data_utils
@@ -12,7 +9,7 @@ from sahi import AutoDetectionModel
 from sahi.predict import get_sliced_prediction
 import json
 from model_utils import enable_dropout, monte_carlo_predictions
-from pdq_evaluation.read_files import convert_yolo_to_rvc, LOGGER
+from pdq_evaluation.read_files import  convert_tau_histopathology_predictions_to_rvc, LOGGER
 from torchvision.transforms import v2 as T
 
 
@@ -142,7 +139,7 @@ class Evaluator:
         """Save predictions to file."""
         with open(save_predictions_path, 'w') as f:
             json.dump(predictions_dict, f, indent=2)
-        convert_yolo_to_rvc(save_predictions_path, save_rvc, class_dict)
+        convert_tau_histopathology_predictions_to_rvc(save_predictions_path, save_rvc, class_dict)
 
     def get_confusion_matrix(self, conf_threshold=0.25, all_iou=False, plot=False, prefix="", class_conf_thresholds=None):
         if self.mc_dropout:

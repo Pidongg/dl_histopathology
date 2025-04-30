@@ -1,5 +1,4 @@
 import os
-
 from ultralytics import YOLO
 import torch
 from evaluator import SAHIYoloEvaluator, YoloEvaluator, RCNNEvaluator
@@ -29,8 +28,6 @@ def main():
     parser.add_argument("--save_predictions", action="store_true", help="Save predictions to a file", default=False)
     parser.add_argument("--save_predictions_path", help="Name of the file to save predictions to", default="model_rcnn_yolo.json")
     parser.add_argument("--save_rvc", help="Path to save RVC predictions to", default="model_rcnn_rvc.json")
-    
-    # Add after other parser arguments
     parser.add_argument("-sahi", action="store_true",
                         help="Use SAHI tiled inference for evaluation",
                         default=False)

@@ -14,7 +14,6 @@ import glob
 import argparse
 import yaml
 import sys
-import cv2
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from data_preparation.rcnn_datasets import RCNNDataset
@@ -111,7 +110,7 @@ def get_valid_transform():
 
 def get_model_instance_segmentation(num_classes, stochastic=False, all_scores=False, skip_nms=False, conf_thresh=None, iou_thresh=None, dropout_rate=0.5, class_conf_thresh=None):
     """
-    Get a pre-trained instance segmentation model.
+    Get a pre-trained instance segmentation model, with optional custom dropout layers and confidence threshold.
     """
     # load an instance segmentation model pre-trained on COCO
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(

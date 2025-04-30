@@ -1,3 +1,4 @@
+# Visualizes feature maps of a YOLO model on a batch of images (same batch as in shap analysis).
 import os
 import argparse
 from ultralytics import YOLO
@@ -9,24 +10,21 @@ def main():
         "703488 [d=0.98892,x=101582,y=53165,w=507,h=506]",
         "703488 [d=0.98892,x=114873,y=37975,w=507,h=506]",
         "703488 [d=0.98892,x=120095,y=51266,w=506,h=506]",
-        # "747331.svs_training_test_tanrada_5%_2 [d=0.98892,x=25633,y=40348,w=506,h=506]",
-        # "747331.svs_training_test_tanrada_5%_2 [d=0.98892,x=29905,y=36551,w=506,h=506]",
-        # "747331.svs_training_test_tanrada_5%_2 [d=0.98892,x=30380,y=39399,w=506,h=506]",
-        # "747331.svs_training_test_tanrada_5%_2 [d=0.98892,x=34652,y=29905,w=506,h=506]",
+        "747331.svs_training_test_tanrada_5%_2 [d=0.98892,x=25633,y=40348,w=506,h=506]",
+        "747331.svs_training_test_tanrada_5%_2 [d=0.98892,x=29905,y=36551,w=506,h=506]",
+        "747331.svs_training_test_tanrada_5%_2 [d=0.98892,x=30380,y=39399,w=506,h=506]",
+        "747331.svs_training_test_tanrada_5%_2 [d=0.98892,x=34652,y=29905,w=506,h=506]",
         "771913 [d=0.98892,x=56013,y=37500,w=506,h=506]",
         "771913 [d=0.98892,x=83070,y=39399,w=506,h=506]",
         "771913 [d=0.98892,x=83544,y=39873,w=507,h=507]",
     ]
     
-    # Parse command line arguments
     parser = argparse.ArgumentParser(description="Run feature map visualization on multiple files")
     parser.add_argument("-pt", "--model_path", required=True, help="Path to model .pt file")
     parser.add_argument("-base", "--base_path", default="M:/Unused/TauCellDL", help="Base path for images")
     parser.add_argument("-out", "--output_dir", default="./feature_map_results", help="Output directory for visualizations")
     
     args = parser.parse_args()
-    
-    # Create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
     
     # Load the model
@@ -43,8 +41,6 @@ def main():
         # Create output subdirectory for this file
         file_output_dir = os.path.join(args.output_dir, sample_id)
         os.makedirs(file_output_dir, exist_ok=True)
-        
-        print(f"\nProcessing {filename}")
         
         try:
             # Run inference with visualize=True to generate feature map visualizations

@@ -4,6 +4,12 @@ import numpy as np
 from pdq_evaluation.read_files import LOGGER
 import torch    
 import torchvision
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import os
+from tqdm import tqdm
+import json
 
 def xywh2xyxy(x):
     # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
@@ -150,6 +156,312 @@ def non_max_suppression(prediction, conf_thres=0.001, iou_thres=0.6, multi_label
             sampled_coords[xi] = x_all[:, 1:, :4]
 
     return output, all_scores, sampled_coords
+
+def visualize_conf_thresholds(results_df, metric='f1', save_path='conf_threshold_optimization.png', single_plot=False):
+    """
+    Visualize confidence threshold optimization results.
+    
+    Args:
+        results_df: DataFrame with optimization results
+        metric: Metric used for optimization (f1, precision, recall, map50, etc.)
+        save_path: Path to save the visualization
+        single_plot: If True, only create a single plot for the specified metric
+    """
+    # Map metric to display name
+    metric_labels = {
+        'f1': 'F1 Score',
+        'precision': 'Precision',
+        'recall': 'Recall',
+        'map50': 'mAP50',
+        'map': 'mAP'
+    }
+    metric_label = metric_labels.get(metric, metric.upper())
+    
+    # Create a color palette
+    palette = sns.color_palette("husl", n_colors=len(results_df['class'].unique()))
+    
+    if single_plot:
+        # Single plot for the specified metric
+        plt.figure(figsize=(10, 6))
+        
+        for i, class_name in enumerate(results_df['class'].unique()):
+            class_data = results_df[results_df['class'] == class_name]
+            plt.plot(class_data['confidence'], class_data[metric], marker='o', label=class_name, color=palette[i])
+        
+        plt.xlabel('Confidence Threshold')
+        plt.ylabel(metric_label)
+        plt.title(f'{metric_label} vs Confidence Threshold')
+        plt.grid(True, alpha=0.3)
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    else:
+        # Create multi-plot figure if all metrics are available
+        available_metrics = [col for col in ['f1', 'precision', 'recall', 'map50'] if col in results_df.columns]
+        n_plots = len(available_metrics)
+        
+        if n_plots <= 2:
+            fig_height, fig_width = 6, 12
+        else:
+            fig_height, fig_width = 10, 15
+            
+        plt.figure(figsize=(fig_width, fig_height))
+        
+        for plot_idx, plot_metric in enumerate(available_metrics, 1):
+            plt.subplot(2, (n_plots+1)//2, plot_idx)
+            
+            for i, class_name in enumerate(results_df['class'].unique()):
+                class_data = results_df[results_df['class'] == class_name]
+                plt.plot(class_data['confidence'], class_data[plot_metric], marker='o', 
+                         label=class_name, color=palette[i])
+                
+            plot_metric_label = metric_labels.get(plot_metric, plot_metric.upper())
+            plt.xlabel('Confidence Threshold')
+            plt.ylabel(plot_metric_label)
+            plt.title(f'{plot_metric_label} vs Confidence Threshold')
+            plt.grid(True, alpha=0.3)
+            
+            # Only add legend to the first subplot
+            if plot_idx == 1:
+                plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+
+def visualize_iou_thresholds(results_df, metric='f1', save_path='iou_threshold_optimization.png'):
+    """
+    Visualize IoU threshold optimization results.
+    
+    Args:
+        results_df: DataFrame with optimization results
+        metric: Metric used for optimization (f1, precision, recall, map50, etc.)
+        save_path: Path to save the visualization
+    """
+    # Map metric to display name
+    metric_labels = {
+        'f1': 'Average F1 Score',
+        'precision': 'Average Precision',
+        'recall': 'Average Recall',
+        'map50': 'Average mAP50',
+        'map': 'mAP (0.5-0.95)',
+        'map75': 'mAP75'
+    }
+    metric_label = metric_labels.get(metric, metric.upper())
+    
+    # Determine which columns are available in the results dataframe
+    available_metrics = []
+    metric_columns = {}
+    
+    # Map common metrics to their column names
+    for m in ['f1', 'precision', 'recall', 'map50', 'map', 'map75']:
+        avg_col = f'avg_{m}'
+        if avg_col in results_df.columns:
+            available_metrics.append(m)
+            metric_columns[m] = avg_col
+        elif m in results_df.columns:
+            available_metrics.append(m)
+            metric_columns[m] = m
+    
+    # Create visualization based on available metrics
+    if len(available_metrics) >= 4:
+        # Use 2x2 grid if we have 4+ metrics
+        plt.figure(figsize=(12, 10))
+        
+        # Plot the optimization metric first
+        plt.subplot(2, 2, 1)
+        y_column = metric_columns.get(metric, metric)
+        plt.plot(results_df['iou'], results_df[y_column], marker='o', linewidth=2, color='green')
+        plt.xlabel('IoU Threshold')
+        plt.ylabel(metric_label)
+        plt.title(f'{metric_label} vs IoU Threshold')
+        plt.grid(True, alpha=0.3)
+        
+        # Plot other important metrics in remaining slots
+        plot_idx = 2
+        for m in ['map', 'map50', 'map75', 'f1', 'precision', 'recall']:
+            if m != metric and m in available_metrics and plot_idx <= 4:
+                plt.subplot(2, 2, plot_idx)
+                y_column = metric_columns.get(m, m)
+                plt.plot(results_df['iou'], results_df[y_column], marker='o', linewidth=2)
+                plt.xlabel('IoU Threshold')
+                plt.ylabel(metric_labels.get(m, m.upper()))
+                plt.title(f'{metric_labels.get(m, m.upper())} vs IoU Threshold')
+                plt.grid(True, alpha=0.3)
+                plot_idx += 1
+    else:
+        # Use 1x2 grid for fewer metrics
+        plt.figure(figsize=(12, 5))
+        
+        # Always try to show mAP in left plot
+        if 'map' in available_metrics:
+            plt.subplot(1, 2, 1)
+            plt.plot(results_df['iou'], results_df[metric_columns['map']], marker='o', linewidth=2)
+            plt.xlabel('IoU Threshold')
+            plt.ylabel('mAP (0.5-0.95)')
+            plt.title('mAP vs IoU Threshold')
+            plt.grid(True, alpha=0.3)
+        elif 'map50' in available_metrics:
+            plt.subplot(1, 2, 1)
+            plt.plot(results_df['iou'], results_df[metric_columns['map50']], marker='o', linewidth=2)
+            plt.xlabel('IoU Threshold')
+            plt.ylabel('mAP50')
+            plt.title('mAP50 vs IoU Threshold')
+            plt.grid(True, alpha=0.3)
+        else:
+            # If no mAP metrics, use the optimization metric on left
+            plt.subplot(1, 2, 1)
+            y_column = metric_columns.get(metric, metric)
+            plt.plot(results_df['iou'], results_df[y_column], marker='o', linewidth=2)
+            plt.xlabel('IoU Threshold')
+            plt.ylabel(metric_label)
+            plt.title(f'{metric_label} vs IoU Threshold')
+            plt.grid(True, alpha=0.3)
+        
+        # Show optimization metric or another metric on right
+        plt.subplot(1, 2, 2)
+        if metric != 'map' and metric != 'map50' and metric in available_metrics:
+            y_column = metric_columns.get(metric, metric)
+            plt.plot(results_df['iou'], results_df[y_column], marker='o', linewidth=2)
+            plt.xlabel('IoU Threshold')
+            plt.ylabel(metric_label)
+            plt.title(f'{metric_label} vs IoU Threshold')
+            plt.grid(True, alpha=0.3)
+        elif 'f1' in available_metrics and metric != 'f1':
+            plt.plot(results_df['iou'], results_df[metric_columns['f1']], marker='o', linewidth=2)
+            plt.xlabel('IoU Threshold')
+            plt.ylabel('F1 Score')
+            plt.title('F1 Score vs IoU Threshold')
+            plt.grid(True, alpha=0.3)
+        elif len(available_metrics) > 1:
+            # Use any available metric that's not already plotted
+            for m in available_metrics:
+                if m != metric and (m != 'map' and m != 'map50' or (metric == 'map' or metric == 'map50')):
+                    y_column = metric_columns.get(m, m)
+                    plt.plot(results_df['iou'], results_df[y_column], marker='o', linewidth=2)
+                    plt.xlabel('IoU Threshold')
+                    plt.ylabel(metric_labels.get(m, m.upper()))
+                    plt.title(f'{metric_labels.get(m, m.upper())} vs IoU Threshold')
+                    plt.grid(True, alpha=0.3)
+                    break
+    
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+
+def save_optimization_results(best_iou, best_confs, class_names, metric, conf_results, iou_results, output_dir, show_plots=True):
+    """
+    Save threshold optimization results to files.
+    
+    Args:
+        best_iou: Best IoU threshold
+        best_confs: List of best confidence thresholds per class
+        class_names: List of class names
+        metric: Metric used for optimization
+        conf_results: Confidence optimization results dataframe
+        iou_results: IoU optimization results dataframe
+        output_dir: Directory to save results
+        show_plots: Whether to display plots (default: True)
+    """
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Save confidence results
+    conf_results.to_csv(os.path.join(output_dir, 'conf_optimization_results.csv'), index=False)
+    
+    # Visualize confidence results
+    conf_vis_path = os.path.join(output_dir, 'conf_threshold_optimization.png')
+    visualize_conf_thresholds(conf_results, metric, conf_vis_path)
+    
+    # Save IoU results
+    iou_results.to_csv(os.path.join(output_dir, 'iou_optimization_results.csv'), index=False)
+    
+    # Visualize IoU results
+    iou_vis_path = os.path.join(output_dir, 'iou_threshold_optimization.png')
+    visualize_iou_thresholds(iou_results, metric, iou_vis_path)
+    
+    # Save optimal thresholds to JSON
+    optimal_thresholds = {
+        'iou_threshold': float(best_iou),
+        'confidence_thresholds': {class_names[i]: float(best_confs[i]) for i in range(len(class_names))},
+        'optimization_metric': metric
+    }
+    
+    with open(os.path.join(output_dir, 'optimal_thresholds.json'), 'w') as f:
+        json.dump(optimal_thresholds, f, indent=4)
+    
+    # Return the paths to results for reference
+    return {
+        'conf_csv': os.path.join(output_dir, 'conf_optimization_results.csv'),
+        'conf_plot': conf_vis_path,
+        'iou_csv': os.path.join(output_dir, 'iou_optimization_results.csv'),
+        'iou_plot': iou_vis_path,
+        'thresholds_json': os.path.join(output_dir, 'optimal_thresholds.json')
+    }
+
+def process_metrics(metrics, class_names, metric_name='f1'):
+    """
+    Extract and process metrics values, handling different formats that might come from different models.
+    
+    Args:
+        metrics: Metrics object or dictionary from model evaluation
+        class_names: List of class names
+        metric_name: Name of the metric to extract
+        
+    Returns:
+        Processed metric value (float)
+    """
+    # Handle different metric formats
+    if metric_name not in metrics:
+        # Try common alternative names
+        if metric_name == 'map50' and 'maps' in metrics:
+            return metrics['maps']
+        else:
+            return 0
+            
+    metric_value = metrics[metric_name]
+    
+    # Handle tensor values
+    if isinstance(metric_value, torch.Tensor):
+        metric_value = metric_value.tolist()
+    
+    # Handle list values for class-specific metrics
+    if isinstance(metric_value, list):
+        return metric_value
+        
+    return metric_value
+
+def extract_class_metric(metrics, class_idx, metric_name='f1'):
+    """
+    Extract a specific class's metric value from metrics.
+    
+    Args:
+        metrics: Metrics dictionary from evaluation
+        class_idx: Class index to extract
+        metric_name: Name of the metric to extract
+        
+    Returns:
+        Class-specific metric value (float)
+    """
+    try:
+        metric_values = metrics[metric_name]
+        
+        # Handle tensors
+        if isinstance(metric_values, torch.Tensor):
+            metric_values = metric_values.tolist()
+            
+        # Extract specific class value
+        class_value = metric_values[class_idx]
+        
+        # Handle nested lists
+        if isinstance(class_value, list):
+            class_value = class_value[0]
+            
+        # Handle tensors
+        if isinstance(class_value, torch.Tensor):
+            class_value = class_value.item()
+            
+        return float(class_value)
+    except (IndexError, KeyError, TypeError, AttributeError):
+        return 0.0
 
 def monte_carlo_predictions(self, img, conf_thresh, iou_thresh, num_samples=30):
     """

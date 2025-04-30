@@ -1,15 +1,13 @@
 # Utility functions to handle image masks, extract bounding boxes, and visualise masks/bboxes.
 # Written with reference to https://pytorch.org/vision/0.11/auto_examples/plot_repurposing_annotations.html.
 
+import glob
 from tqdm import tqdm
 
 import torch
 from torchvision.io import read_image
 from torchvision.ops import masks_to_boxes
 from torchvision.utils import draw_segmentation_masks, draw_bounding_boxes
-
-import sys
-import os
 
 from data_preparation.data_utils import *
 

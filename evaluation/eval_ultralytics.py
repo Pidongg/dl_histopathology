@@ -7,7 +7,7 @@ from confusion_matrix_utils import plot_confusion_matrix, save_interactive_confu
 import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'pdq_evaluation')))
-from read_files import convert_yolo_to_rvc
+from read_files import convert_tau_histopathology_predictions_to_rvc
 from monte_carlo_dropout import save_mc_predictions_to_json
 from data_preparation import data_utils
 
@@ -94,13 +94,13 @@ def main():
                 input_size=int(args.input_size),
                 class_conf_thresholds=class_conf_thresholds
             )
-            convert_yolo_to_rvc(args.save_mc_predictions, args.save_rvc, class_names)
+            convert_tau_histopathology_predictions_to_rvc(args.save_mc_predictions, args.save_rvc, class_names)
             LOGGER.info(f"Saved Monte Carlo predictions to {args.save_mc_predictions}")
         else:
             LOGGER.info("Saving standard predictions to JSON files...")
             print(class_conf_thresholds)
             data_utils.save_predictions_to_json(model, args.cfg, args.conf, args.save_json, float(args.iou), class_conf_thresholds)
-            convert_yolo_to_rvc(args.save_json, args.save_rvc, class_names)
+            convert_tau_histopathology_predictions_to_rvc(args.save_json, args.save_rvc, class_names)
             LOGGER.info("Finished saving predictions")
 
     if args.save_interactive:
