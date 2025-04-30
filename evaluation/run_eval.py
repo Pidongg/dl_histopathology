@@ -6,6 +6,7 @@ from data_preparation import data_utils
 import argparse
 import yaml
 import train_model.rcnn_scripts.run_train_rcnn as run_train_rcnn
+from confusion_matrix_utils import save_interactive_confusion_matrix
 
 def main():
     parser = argparse.ArgumentParser()
@@ -58,6 +59,15 @@ def main():
     parser.add_argument("--mc_dropout", action="store_true",
                         help="Use Monte Carlo Dropout for R-CNN",
                         default=False)
+    parser.add_argument("--save_interactive", action="store_true",
+                        help="Save interactive confusion matrix, with varying confidence thresholds (only implemented for YOLO)",
+                        default=False)
+    parser.add_argument("--save_interactive_path", type=str,
+                        help="Path to save interactive confusion matrix",
+                        default="interactive_confusion_matrix.html")
+    parser.add_argument("--input_size", type=int,
+                        help="Input size for the model. 800 for our Faster R-CNN models, since the images are 512x512, pytorch Faster RCNN will resize to 800x800.",
+                        default=800)
     args = parser.parse_args()
 
     model_path = args.model
@@ -113,6 +123,10 @@ def main():
         model = YOLO(model_path)
         model.to(device)
 
+        if args.save_interactive:
+            save_interactive_confusion_matrix(model, cfg, class_dict, args.save_interactive_path)
+            return
+
         if args.sahi:
             evaluator = SAHIYoloEvaluator(model,
                                         test_imgs=test_images,
@@ -120,15 +134,19 @@ def main():
                                         device=device,
                                         class_dict=class_dict,
                                         save_dir=save_dir,
+                                        model_type='yolo',
                                         slice_size=args.slice_size,
-                                        overlap_ratio=args.overlap_ratio)
+                                        overlap_ratio=args.overlap_ratio,
+                                        input_size=args.input_size)
         else:
             evaluator = YoloEvaluator(model,
                                     test_imgs=test_images,
                                     test_labels=test_labels,
                                     device=device,
                                     class_dict=class_dict,
-                                    save_dir=save_dir)  
+                                    save_dir=save_dir,
+                                    model_type='yolo',
+                                    input_size=args.input_size)  
 
     elif args.rcnn:
         num_classes = len(class_dict) + 1
@@ -160,7 +178,6 @@ def main():
         model.load_state_dict(state_dict)
         model.to(device)
 
-        # Force clear any previous output files
         if args.save_predictions and os.path.exists(args.save_predictions_path):
             os.remove(args.save_predictions_path)
         if args.save_rvc and os.path.exists(args.save_rvc):
@@ -171,6 +188,7 @@ def main():
                                   device=device,
                                   class_dict=class_dict,
                                   save_dir=save_dir,
+                                  model_type='rcnn',
                                   save_predictions=args.save_predictions,
                                   mc_dropout=args.mc_dropout,
                                   num_samples=args.num_samples,
@@ -178,9 +196,10 @@ def main():
                                   conf_thresh=float(args.conf),
                                   save_predictions_path=args.save_predictions_path,
                                   save_rvc=args.save_rvc,
-                                  data_yaml=cfg)
+                                  data_yaml=cfg,
+                                  input_size=args.input_size)
         
-    if args.save_predictions:
+    if args.mc_dropout:
         return 
     ap = evaluator.ap_per_class(plot=True, plot_all=False, prefix=prefix)
     print("AP per class:", ap)

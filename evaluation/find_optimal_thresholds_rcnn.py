@@ -12,7 +12,7 @@ from evaluator import RCNNEvaluator
 import train_model.rcnn_scripts.run_train_rcnn as run_train_rcnn
 from evaluation import model_utils
 
-def evaluate_with_thresholds(checkpoint_path, data_yaml, iou_thresh, conf_thresholds, class_names, test_images, test_labels, device, save_dir):
+def evaluate_with_thresholds(checkpoint_path, iou_thresh, conf_thresholds, class_names, test_images, test_labels, device, save_dir):
     """Evaluate model with specific thresholds and return metrics."""
     # Convert list of thresholds to dictionary with 1-indexed class IDs as keys
     class_specific_thresholds = {i+1: thresh for i, thresh in enumerate(conf_thresholds)}
@@ -53,7 +53,7 @@ def evaluate_with_thresholds(checkpoint_path, data_yaml, iou_thresh, conf_thresh
         'f1': f1.tolist() if hasattr(f1, 'tolist') else f1
     }
 
-def find_optimal_conf_thresholds(checkpoint_path, data_yaml, iou_thresh, class_names, test_images, test_labels, device, save_dir, metric='f1', conf_range=None):
+def find_optimal_conf_thresholds(checkpoint_path, iou_thresh, class_names, test_images, test_labels, device, save_dir, metric='f1', conf_range=None):
     """Find optimal confidence threshold for each class based on the specified metric."""
     if conf_range is None:
         conf_range = np.arange(0.05, 0.96, 0.1)  # Default if not specified
@@ -82,7 +82,7 @@ def find_optimal_conf_thresholds(checkpoint_path, data_yaml, iou_thresh, class_n
             class_conf_thresholds[class_idx] = conf
             
             # Evaluate with current thresholds
-            metrics = evaluate_with_thresholds(checkpoint_path, data_yaml, iou_thresh, class_conf_thresholds, class_names, test_images, test_labels, device, save_dir)
+            metrics = evaluate_with_thresholds(checkpoint_path, iou_thresh, class_conf_thresholds, class_names, test_images, test_labels, device, save_dir)
             
             # Extract metrics safely using our utility function
             per_class_f1 = model_utils.extract_class_metric(metrics, class_idx, 'f1')
@@ -120,12 +120,10 @@ def find_optimal_conf_thresholds(checkpoint_path, data_yaml, iou_thresh, class_n
     
     return best_confs, results_df
 
-def find_optimal_iou_threshold(checkpoint_path, data_yaml, conf_thresholds, class_names, test_images, test_labels, device, save_dir, metric='f1', iou_range=None):
+def find_optimal_iou_threshold(checkpoint_path, conf_thresholds, class_names, test_images, test_labels, device, save_dir, metric='f1', iou_range=None):
     """Find optimal IoU threshold using optimized confidence thresholds based on the specified metric."""
-    if iou_range is None:
-        iou_range = np.arange(0.3, 0.71, 0.05)  # Default if not specified
-    
-    best_iou = 0.5  # Default
+ 
+    best_iou = 0.5
     best_score = 0
     
     results_data = {
@@ -139,7 +137,7 @@ def find_optimal_iou_threshold(checkpoint_path, data_yaml, conf_thresholds, clas
     
     for iou in tqdm(iou_range):
         # Evaluate with current IoU threshold and optimized conf thresholds
-        metrics = evaluate_with_thresholds(checkpoint_path, data_yaml, iou, conf_thresholds, class_names, test_images, test_labels, device, save_dir)
+        metrics = evaluate_with_thresholds(checkpoint_path, iou, conf_thresholds, class_names, test_images, test_labels, device, save_dir)
         
         # Convert tensor values to Python floats if necessary
         map_val = metrics['map'].item() if isinstance(metrics['map'], torch.Tensor) else metrics['map']
@@ -267,19 +265,18 @@ def main():
     default_iou = args.default_iou
     print(f"Finding optimal confidence thresholds using default IoU={default_iou} based on {args.metric} metric")
     best_confs, conf_results = find_optimal_conf_thresholds(
-        args.pt, args.cfg, default_iou, class_names, args.test_imgs, args.test_labels, 
+        args.pt, default_iou, class_names, args.test_imgs, args.test_labels, 
         device, args.output_dir, args.metric, conf_range
     )
     
     # Now find optimal IoU threshold using the optimized confidence thresholds
     print(f"Finding optimal IoU threshold using optimized confidence thresholds based on {args.metric} metric")
     best_iou, iou_results = find_optimal_iou_threshold(
-        args.pt, args.cfg, best_confs, class_names, args.test_imgs, args.test_labels, 
+        args.pt, best_confs, class_names, args.test_imgs, args.test_labels, 
         device, args.output_dir, args.metric, iou_range
     )
     
-    # Save results using the common utility function
-    result_paths = model_utils.save_optimization_results(
+    _ = model_utils.save_optimization_results(
         best_iou, best_confs, class_names, args.metric, 
         conf_results, iou_results, args.output_dir
     )
@@ -288,16 +285,12 @@ def main():
     print(f"Optimal IoU threshold: {best_iou}")
     print("Optimal confidence thresholds:")
     for i, class_name in enumerate(class_names):
-        print(f"  {class_name}: {best_confs[i]}")
+        print(f"{class_name}: {best_confs[i]}")
     
     # Final evaluation with optimal thresholds
     print("Running final evaluation with optimal thresholds")
-    final_metrics = evaluate_with_thresholds(args.pt, args.cfg, best_iou, best_confs, class_names, args.test_imgs, args.test_labels, device, args.output_dir)
-    
-    print(f"Final mAP50-95: {final_metrics['map']:.4f}")
-    print(f"Final mAP50: {final_metrics['map50']:.4f}")
-    
-    # Calculate and print the average F1 score
+    final_metrics = evaluate_with_thresholds(args.pt, best_iou, best_confs, class_names, args.test_imgs, args.test_labels, device, args.output_dir)
+
     f1_values = final_metrics['f1']
     if isinstance(f1_values, torch.Tensor):
         f1_values = f1_values.tolist()

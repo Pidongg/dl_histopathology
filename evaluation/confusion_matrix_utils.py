@@ -1,4 +1,3 @@
-from ultralytics.utils import LOGGER
 import seaborn as sn
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -62,17 +61,15 @@ def save_interactive_confusion_matrix(model, data_yaml, class_names, save_path, 
             thresholds = [default_threshold] * num_classes
             thresholds[class_idx] = t
             threshold_combinations.append(thresholds)
-    
-    print(len(conf_range))
-    
+        
     # Grid search for all threshold combinations
-    LOGGER.info(f"Starting visualization with {len(threshold_combinations)} threshold combinations")
+    print(f"Starting visualization with {len(threshold_combinations)} threshold combinations")
     
     
     # Test all combinations
     for i, thresholds in enumerate(threshold_combinations):
         if i % 10 == 0:
-            LOGGER.info(f"Testing combination {i+1}/{len(threshold_combinations)}")
+            print(f"Testing combination {i+1}/{len(threshold_combinations)}")
         
         # Convert thresholds to a hashable format
         thresholds_key = tuple(thresholds)
@@ -211,5 +208,5 @@ def save_interactive_confusion_matrix(model, data_yaml, class_names, save_path, 
     
     # Save as HTML file
     fig.write_html(save_path)
-    LOGGER.info(f"Interactive plot saved to {save_path}")
-    LOGGER.info(f"Tested {len(all_results)} different threshold configurations")
+    print(f"Interactive plot saved to {save_path}")
+    print(f"Tested {len(all_results)} different threshold configurations")

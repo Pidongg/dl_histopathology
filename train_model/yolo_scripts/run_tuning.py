@@ -1,23 +1,11 @@
 from ultralytics import YOLO
 import yaml
 import argparse
-import logging
 import torch
 import os
 import ray
 from ray import tune
 import random
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-def cleanup_gpu():
-    """Clean up GPU memory"""
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        for i in range(torch.cuda.device_count()):
-            with torch.cuda.device(i):
-                torch.cuda.empty_cache()
 
 def main():
     try:
@@ -35,23 +23,23 @@ def main():
 
         # Check CUDA availability
         if not torch.cuda.is_available():
-            logger.error("CUDA is not available. Please check your CUDA setup.")
+            print("CUDA is not available. Please check your CUDA setup.")
             return
 
         # Set GPU visibility if specified
         if args.gpu_id:
             os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu_id
-            logger.info(f"Setting CUDA_VISIBLE_DEVICES to {args.gpu_id}")
+            print(f"Setting CUDA_VISIBLE_DEVICES to {args.gpu_id}")
 
-        logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Not Set')}")
-        logger.info(f"Using {torch.cuda.device_count()} GPUs: {[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]}")
+        print(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'Not Set')}")
+        print(f"Using {torch.cuda.device_count()} GPUs: {[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]}")
 
         # Load base config
         with open(args.config, "r") as stream:
             try:
                 cfg_args = yaml.safe_load(stream)
             except yaml.YAMLError as exc:
-                logger.error(f"Error loading config: {exc}")
+                print(f"Error loading config: {exc}")
                 return
 
         # Define search space
@@ -70,7 +58,7 @@ def main():
 
         # Generate a random port for Ray to avoid conflicts with existing Ray instances
         ray_port = random.randint(10000, 20000)
-        logger.info(f"Starting Ray on port {ray_port}")
+        print(f"Starting Ray on port {ray_port}")
         
         # Initialize Ray with a specific port
         if not ray.is_initialized():
@@ -91,13 +79,11 @@ def main():
             **{k: v for k, v in cfg_args.items() if k not in ['data', 'epochs', 'iterations', 'pretrained'] and not k.startswith('space/')}
         )
     except Exception as e:
-        logger.error(f"An error occurred during training: {e}")
+        print(f"An error occurred during training: {e}")
         raise
     finally:
-        cleanup_gpu()
-        # Only shutdown Ray if this script initialized it
         if ray.is_initialized():
-            ray.shutdown()  # Ensure Ray resources are released
+            ray.shutdown()
 
 if __name__ == "__main__":
     main()

@@ -9,13 +9,12 @@ from sahi import AutoDetectionModel
 from sahi.predict import get_sliced_prediction
 import json
 from model_utils import enable_dropout, monte_carlo_predictions
-from pdq_evaluation.read_files import  convert_tau_histopathology_predictions_to_rvc, LOGGER
+from pdq_evaluation.read_files import convert_tau_histopathology_predictions_to_rvc
 from torchvision.transforms import v2 as T
 
-
 class Evaluator:
-    def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir, 
-                 save_predictions=False, mc_dropout=False, num_samples=30, 
+    def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir, model_type, input_size,
+                 save_predictions=False, mc_dropout=False, num_samples=30,
                  iou_thresh=0.6, conf_thresh=0.25, save_predictions_path=None, save_rvc=None):
         self.model = model
         self.mc_dropout = mc_dropout
@@ -24,18 +23,19 @@ class Evaluator:
         self.conf_thresh = conf_thresh
 
         # If test_imgs/test_labels are already lists of files, use them directly
-        self.test_imgs = (test_imgs if isinstance(test_imgs, list) 
-                         else data_utils.list_files_of_a_type(test_imgs, ".png", recursive=True))
+        self.test_imgs = (test_imgs if isinstance(test_imgs, list)
+                          else data_utils.list_files_of_a_type(test_imgs, ".png", recursive=True))
         self.test_imgs.sort()
-        self.test_labels = (test_labels if isinstance(test_labels, list) 
-                          else data_utils.list_files_of_a_type(test_labels, ".txt", recursive=True))
+        self.test_labels = (test_labels if isinstance(test_labels, list)
+                            else data_utils.list_files_of_a_type(test_labels, ".txt", recursive=True))
         self.test_labels.sort()
         self.device = device
 
         self.model.eval()
         if self.mc_dropout:
             enable_dropout(self.model)
-            predictions_dict = self._generate_mc_predictions(num_samples)
+            predictions_dict = self._generate_mc_predictions(
+                num_samples, model_type, input_size)
         else:
             preds, gt, predictions_dict = self.no_mc_predictions()
             self.metrics = ObjectDetectionMetrics(
@@ -47,7 +47,8 @@ class Evaluator:
             )
 
         if self.save_predictions:
-            self._save_predictions(predictions_dict, save_predictions_path, save_rvc, class_dict)
+            self._save_predictions(
+                predictions_dict, save_predictions_path, save_rvc, class_dict)
 
     @abstractmethod
     def infer_for_one_img(self, img_path):
@@ -65,24 +66,24 @@ class Evaluator:
         for i in tqdm.tqdm(range(len(self.test_imgs))):
             img_path = self.test_imgs[i]
             ground_truths, predictions = self.infer_for_one_img(img_path)
-            
+
             # Ensure both are tensors
             if ground_truths is not None and not isinstance(ground_truths, torch.Tensor):
                 ground_truths = torch.tensor(ground_truths, device=self.device)
-            
+
             if predictions is not None and not isinstance(predictions, torch.Tensor):
                 predictions = torch.tensor(predictions, device=self.device)
-                
+
             # Add to the lists
             preds.append(predictions)
             gt.append(ground_truths)
-            
+
         return preds, gt
 
-    def _generate_mc_predictions(self, num_samples):
+    def _generate_mc_predictions(self, num_samples, model_type, input_size):
         """Generate Monte Carlo predictions and return as dictionary."""
         results_dict = {}
-        
+
         for img_file in self.test_imgs:
             try:
                 # Get processed predictions
@@ -90,6 +91,8 @@ class Evaluator:
                     img_file,
                     self.conf_thresh,
                     self.iou_thresh,
+                    model_type,
+                    input_size,
                     num_samples
                 )
                 # Generate image key and predictions
@@ -99,7 +102,7 @@ class Evaluator:
                     parts = rel_path.split('/')
                     if parts[-2] in parts[-1]:
                         rel_path = parts[-1]
-                
+
                 # Format predictions
                 image_dets = []
                 if output is not None and len(output) > 0:
@@ -110,7 +113,7 @@ class Evaluator:
                         conf = float(pred[4].cpu().numpy())
                         cls_id = int(pred[5].cpu().numpy())
                         class_confs = all_scores[idx].cpu().numpy()
-                        
+
                         det_dict = {
                             "boxes": box.tolist(),
                             "conf": conf,
@@ -118,13 +121,14 @@ class Evaluator:
                             "class_confs": class_confs.tolist()
                         }
                         if covariances is not None:
-                            det_dict["covars"] = covariances[idx].cpu().numpy().tolist()
+                            det_dict["covars"] = covariances[idx].cpu(
+                            ).numpy().tolist()
                         image_dets.append(det_dict)
-                
+
                 results_dict[rel_path] = image_dets
-                
+
             except Exception as e:
-                LOGGER.warning(f"Error processing image {img_file}: {e}")
+                print(f"Error processing image {img_file}: {e}")
                 rel_path = os.path.basename(img_file)
                 # Clean up path if needed
                 if '/' in rel_path:
@@ -132,18 +136,20 @@ class Evaluator:
                     if parts[-2] in parts[-1]:
                         rel_path = parts[-1]
                 results_dict[rel_path] = []
-        
+
         return results_dict
-        
+
     def _save_predictions(self, predictions_dict, save_predictions_path, save_rvc, class_dict):
         """Save predictions to file."""
         with open(save_predictions_path, 'w') as f:
             json.dump(predictions_dict, f, indent=2)
-        convert_tau_histopathology_predictions_to_rvc(save_predictions_path, save_rvc, class_dict)
+        convert_tau_histopathology_predictions_to_rvc(
+            save_predictions_path, save_rvc, class_dict)
 
     def get_confusion_matrix(self, conf_threshold=0.25, all_iou=False, plot=False, prefix="", class_conf_thresholds=None):
         if self.mc_dropout:
-            raise Exception("Confusion matrix not available for MC Dropout mode")
+            raise Exception(
+                "Confusion matrix not available for MC Dropout mode")
 
         return self.metrics.get_confusion_matrix(conf_threshold, all_iou=all_iou, plot=plot, prefix=prefix, class_conf_thresholds=class_conf_thresholds)
 
@@ -151,7 +157,8 @@ class Evaluator:
         if self.mc_dropout:
             raise Exception("AP per class not available for MC Dropout mode")
 
-        ap = self.metrics.ap_per_class(plot=plot, plot_all=plot_all, prefix=prefix)
+        ap = self.metrics.ap_per_class(
+            plot=plot, plot_all=plot_all, prefix=prefix)
         return ap
 
     def get_map50(self):
@@ -164,31 +171,49 @@ class Evaluator:
             raise Exception("mAP50-95 not available for MC Dropout mode")
         return self.metrics.get_map50_95()
 
+
 class YoloEvaluator(Evaluator):
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir):
         super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir)
 
     def infer_for_one_img(self, img_path):
-        ground_truths = data_utils.get_labels_for_image(self.device, img_path, self.test_imgs, self.test_labels)  # (N, 5) where N = number of labels
+        ground_truths = data_utils.get_labels_for_image(
+            self.device, img_path, self.test_imgs, self.test_labels)  # (N, 5) where N = number of labels
         if not self.mc_dropout:
-            predictions = self.model(img_path, verbose=False, conf=0, device=self.device)[0].boxes.data
+            results = self.model(img_path, verbose=False,
+                                 conf=0, device=self.device)[0].boxes.data
         else:
-            predictions = monte_carlo_predictions(img_path, self.conf_thresh, self.iou_thresh, self.num_samples, skip_nms=True)
-        # TODO: add prediction saving for YOLO
-        # if self.save_predictions:
-        #             all_scores = pred['scores_dist'].cpu().numpy() if 'scores_dist' in pred else None
-        #             image_preds = []
-        #             for j, (box, score, label) in enumerate(zip(bboxes, scores, labels)):
-        #                 pred_dict = {
-        #                     "boxes": [float(x) for x in box.cpu()],
-        #                     "cls_id": int(label.item()),
-        #                     "conf": float(score.item()),
-        #                     "class_confs": [float(x) for x in all_scores[j][1:]] if all_scores is not None else [float(score.item())]
-        #                 }
-        #                 image_preds.append(pred_dict)
-        #             self.predictions_dict[clean_name] = image_preds
+            results = self.model.predict(
+                img_path, conf=self.conf_thresh, skip_nms=True, iou=self.iou_thresh)[0]
+            return ground_truths, results
 
-        return ground_truths, predictions
+        boxes = results.boxes
+
+        predictions = []
+        if len(boxes) > 0:
+            for box in boxes:
+                try:
+                    xyxy = box.xyxy.cpu().numpy()
+                    x1, y1, x2, y2 = xyxy.reshape(-1)[:4]
+                    conf = float(box.data[0, 4].cpu().numpy())
+                    cls_id = int(box.data[0, 5].cpu().numpy())
+                    # Get all class confidences
+                    class_confs = box.data[0, 6:].cpu().numpy()
+
+                    # Create prediction array
+                    pred = {
+                        'boxes': [float(x1), float(y1), float(x2), float(y2)],
+                        'cls_id': cls_id,
+                        'conf': conf,
+                        'class_confs': class_confs.tolist()
+                    }
+                    predictions.append(pred)
+                except Exception as e:
+                    print(f"Error processing box: {e}")
+                    continue
+
+        return ground_truths, results
+
 
 class SAHIYoloEvaluator(YoloEvaluator):
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir, slice_size=256, overlap_ratio=0.2):
@@ -204,8 +229,9 @@ class SAHIYoloEvaluator(YoloEvaluator):
         super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir)
 
     def infer_for_one_img(self, img_path):
-        ground_truths = data_utils.get_labels_for_image(self.device, img_path, self.test_imgs, self.test_labels)
-        
+        ground_truths = data_utils.get_labels_for_image(
+            self.device, img_path, self.test_imgs, self.test_labels)
+
         # Use SAHI's sliced prediction
         result = get_sliced_prediction(
             img_path,
@@ -216,9 +242,10 @@ class SAHIYoloEvaluator(YoloEvaluator):
             overlap_width_ratio=self.overlap_ratio,
             verbose=0
         )
-        
+
         # Convert SAHI predictions to the expected format
-        predictions = torch.zeros((len(result.object_prediction_list), 6), device=self.device)
+        predictions = torch.zeros(
+            (len(result.object_prediction_list), 6), device=self.device)
         for idx, pred in enumerate(result.object_prediction_list):
             bbox = pred.bbox.to_xyxy()
             predictions[idx] = torch.tensor([
@@ -226,16 +253,16 @@ class SAHIYoloEvaluator(YoloEvaluator):
                 pred.score.value,
                 pred.category.id
             ], device=self.device)
-        
+
         return ground_truths, predictions
+
 
 class RCNNEvaluator(Evaluator):
     def __init__(self, model, test_imgs, test_labels, device, class_dict, save_dir, save_predictions=False, mc_dropout=False, num_samples=30, iou_thresh=0.6, conf_thresh=0.25, save_predictions_path=None, save_rvc=None, data_yaml=None):
-        super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir, save_predictions, mc_dropout, num_samples, iou_thresh, conf_thresh, save_predictions_path, save_rvc, data_yaml)
+        super().__init__(model, test_imgs, test_labels, device, class_dict, save_dir, save_predictions,
+                         mc_dropout, num_samples, iou_thresh, conf_thresh, save_predictions_path, save_rvc, data_yaml)
 
     def infer_for_one_img(self, img_path):
-
-        # Get clean filename if we're saving predictions
         if self.save_predictions:
             base_name = os.path.basename(img_path)
             parts = base_name.split('[')
@@ -261,40 +288,43 @@ class RCNNEvaluator(Evaluator):
             try:
                 # Ensure model is on the correct device
                 self.model = self.model.to(self.device)
-                
+
                 # Transform and move image to device
                 x = transforms(image)
                 # convert RGBA -> RGB and move to device
                 x = x[:3, ...].to(self.device)
-                
+
                 # Get ground truth with device parameter
-                ground_truths = data_utils.get_labels_for_image(self.device, img_path, self.test_imgs, self.test_labels)
-                
+                ground_truths = data_utils.get_labels_for_image(
+                    self.device, img_path, self.test_imgs, self.test_labels)
+
                 # Get predictions
                 predictions = self.model([x, ])
-                
+
                 if self.mc_dropout:
                     return ground_truths, predictions
-                    
+
                 # Check if predictions list is empty
                 if not predictions:
                     print(f"Model returned empty predictions for {img_path}")
                     return ground_truths, torch.zeros((0, 6), device=self.device)
-                
+
                 pred = predictions[0]
 
                 # Process prediction results
                 labels = pred['labels']
                 i = labels != 0  # indices of non-background class predictions
-                
+
                 # Ensure all tensors are on the same device
                 bboxes = pred['boxes'][i].to(self.device)
                 scores = pred['scores'][i].unsqueeze(-1).to(self.device)
-                labels = labels[i].unsqueeze(-1).to(self.device) - 1  # Adjust class indices
+                # Adjust class indices
+                labels = labels[i].unsqueeze(-1).to(self.device) - 1
 
                 # If saving predictions, store them in the dictionary
                 if self.save_predictions:
-                    all_scores = pred['scores_dist'].cpu().numpy() if 'scores_dist' in pred else None
+                    all_scores = pred['scores_dist'].cpu(
+                    ).numpy() if 'scores_dist' in pred else None
                     image_preds = []
                     for j, (box, score, label) in enumerate(zip(bboxes, scores, labels)):
                         pred_dict = {

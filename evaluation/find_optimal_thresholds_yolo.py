@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import os
 from tqdm import tqdm
-from ultralytics.utils import LOGGER
 from evaluation import model_utils
 
 def evaluate_with_thresholds(model, data_yaml, iou_thresh, conf_thresholds):
@@ -30,9 +29,6 @@ def evaluate_with_thresholds(model, data_yaml, iou_thresh, conf_thresholds):
 
 def find_optimal_conf_thresholds(model, data_yaml, iou_thresh, class_names, metric='f1', conf_range=None):
     """Find optimal confidence threshold for each class based on the specified metric."""
-    if conf_range is None:
-        conf_range = np.arange(0.05, 0.96, 0.1)  # Default if not specified
-    
     best_confs = [0.25] * len(class_names)  # Default starting point
     best_scores = [0] * len(class_names)  # Track best score for each class
     
@@ -41,9 +37,8 @@ def find_optimal_conf_thresholds(model, data_yaml, iou_thresh, class_names, metr
     
     # For each class, find optimal confidence threshold
     for class_idx in range(len(class_names)):
-        LOGGER.info(f"Finding optimal threshold for class {class_idx}: {class_names[class_idx]} using {metric} metric")
+        print(f"Finding optimal threshold for class {class_idx}: {class_names[class_idx]} using {metric} metric")
         
-        # Initialize results data for this class
         results_data = {
             'class': [],
             'confidence': [],
@@ -55,7 +50,7 @@ def find_optimal_conf_thresholds(model, data_yaml, iou_thresh, class_names, metr
         
         for conf in tqdm(conf_range):
             # Create conf thresholds with current conf for target class
-            class_conf_thresholds = [0.25] * len(class_names)  # Default for other classes
+            class_conf_thresholds = [0.25] * len(class_names)
             class_conf_thresholds[class_idx] = conf
             
             # Evaluate with current thresholds
@@ -84,7 +79,7 @@ def find_optimal_conf_thresholds(model, data_yaml, iou_thresh, class_names, metr
     
     return best_confs, results_df
 
-def find_optimal_iou_threshold(model, data_yaml, conf_thresholds, class_names, metric='f1', iou_range=None):
+def find_optimal_iou_threshold(model, data_yaml, conf_thresholds, metric='f1', iou_range=None):
     """Find optimal IoU threshold using optimized confidence thresholds based on average of the specified metric."""
     if iou_range is None:
         iou_range = np.arange(0.3, 0.71, 0.05)  # Default if not specified
@@ -103,7 +98,7 @@ def find_optimal_iou_threshold(model, data_yaml, conf_thresholds, class_names, m
         'map75': []
     }
     
-    LOGGER.info(f"Finding optimal IoU threshold with optimized confidence thresholds based on {metric}")
+    print(f"Finding optimal IoU threshold with optimized confidence thresholds based on {metric}")
     
     for iou in tqdm(iou_range):
         # Evaluate with current IoU threshold and optimized conf thresholds
@@ -205,7 +200,7 @@ def main():
     with open(args.cfg, 'r') as f:
         config = yaml.safe_load(f)
     class_names = config['names']
-    LOGGER.info(f"Loaded {len(class_names)} classes")
+    print(f"Loaded {len(class_names)} classes")
 
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
@@ -217,45 +212,38 @@ def main():
 
     # First, find optimal confidence thresholds using default IoU
     default_iou = args.default_iou
-    LOGGER.info(f"Finding optimal confidence thresholds using default IoU={default_iou} based on {args.metric} scores")
+    print(f"Finding optimal confidence thresholds using default IoU={default_iou} based on {args.metric} scores")
     best_confs, conf_results = find_optimal_conf_thresholds(
         model, args.cfg, default_iou, class_names, args.metric, conf_range
     )
     
     # Now find optimal IoU threshold using the optimized confidence thresholds
-    LOGGER.info(f"Finding optimal IoU threshold using optimized confidence thresholds based on {args.metric}")
+    print(f"Finding optimal IoU threshold using optimized confidence thresholds based on {args.metric}")
     best_iou, iou_results = find_optimal_iou_threshold(
-        model, args.cfg, best_confs, class_names, args.metric, iou_range
+        model, args.cfg, best_confs, args.metric, iou_range
     )
     
     # Save results using common utility function
-    result_paths = model_utils.save_optimization_results(
+    _ = model_utils.save_optimization_results(
         best_iou, best_confs, class_names, args.metric, 
         conf_results, iou_results, args.output_dir
     )
     
     # Print optimal thresholds
-    LOGGER.info(f"Optimal IoU threshold: {best_iou}")
-    LOGGER.info("Optimal confidence thresholds:")
+    print(f"Optimal IoU threshold: {best_iou}")
+    print("Optimal confidence thresholds:")
     for i, class_name in enumerate(class_names):
-        LOGGER.info(f"  {class_name}: {best_confs[i]}")
+        print(f"  {class_name}: {best_confs[i]}")
     
     # Final evaluation with optimal thresholds
-    LOGGER.info("Running final evaluation with optimal thresholds")
+    print("Running final evaluation with optimal thresholds")
     final_metrics = evaluate_with_thresholds(model, args.cfg, best_iou, best_confs)
     
     # Print metrics per class
     for metric_name in ['f1', 'precision', 'recall']:
-        LOGGER.info(f"Final per-class {metric_name} scores:")
+        print(f"Final per-class {metric_name} scores:")
         for i, class_name in enumerate(class_names):
-            LOGGER.info(f"  {class_name}: {final_metrics[metric_name][i]:.4f}")
-    
-    # Print optimized metric
-    if args.metric in ['map', 'map50', 'map75']:
-        LOGGER.info(f"Final optimized metric ({args.metric}): {final_metrics[args.metric]:.4f}")
-    else:
-        avg = sum(final_metrics[args.metric]) / len(final_metrics[args.metric])
-        LOGGER.info(f"Final optimized metric ({args.metric}): {avg:.4f}")
+            print(f"  {class_name}: {final_metrics[metric_name][i]:.4f}")
 
 if __name__ == "__main__":
     main()

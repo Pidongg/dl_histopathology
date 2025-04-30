@@ -37,7 +37,7 @@ def init(self, boxes, orig_shape) -> None:
 
 ultralytics.engine.results.Boxes.__init__ = init
 
-from ultralytics.utils.ops import xywh2xyxy, LOGGER, nms_rotated
+from ultralytics.utils.ops import xywh2xyxy, nms_rotated
 import torch
 import time
 
@@ -144,7 +144,7 @@ def non_max_suppression(
 
         output[xi] = x[i]
         if (time.time() - t) > time_limit:
-            LOGGER.warning(f"WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded")
+            print(f"WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded")
             break  # time limit exceeded
 
     return output

@@ -6,9 +6,7 @@ import torch
 import torchvision.transforms.functional as F
 import json
 import yaml
-from ultralytics.utils import LOGGER
 import cv2
-
 
 def list_files_of_a_type(directory, extension, recursive=False):
     """
@@ -105,7 +103,7 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path, iou_thres
     val_path = os.path.join(data_config.get(
         'path', ''), data_config.get('val', ''))
     if not os.path.exists(val_path):
-        LOGGER.error(f"Invalid validation path: {val_path}")
+        print(f"Invalid validation path: {val_path}")
         return
 
     # Process all images in all subdirectories
@@ -144,7 +142,7 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path, iou_thres
                         }
                         predictions.append(pred)
                     except Exception as e:
-                        LOGGER.warning(f"Error processing box: {e}")
+                        print(f"Error processing box: {e}")
                         continue
 
             # Use consistent path format
@@ -152,7 +150,7 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path, iou_thres
             results_dict[rel_path] = predictions
 
         except Exception as e:
-            LOGGER.warning(f"Error processing image {img_file}: {e}")
+            print(f"Error processing image {img_file}: {e}")
             continue
 
     # Save to JSON
@@ -160,7 +158,7 @@ def save_predictions_to_json(model, data_yaml, conf_thresh, save_path, iou_thres
         with open(save_path, 'w') as f:
             json.dump(results_dict, f, indent=2)
     except Exception as e:
-        LOGGER.error(f"Error saving predictions to {save_path}: {e}")
+        print(f"Error saving predictions to {save_path}: {e}")
 
 
 def visualize_class_images(root_dir, img_dir, label_dir, target_class=1):
@@ -173,7 +171,6 @@ def visualize_class_images(root_dir, img_dir, label_dir, target_class=1):
         label_dir (str): Directory containing labels
         target_class (int): Class index to visualize (1 for CB)
     """
-    # Import here to avoid circular imports
     from data_preparation.image_labelling import bboxes_from_yolo_labels, show_bboxes
 
     # Define color mapping
@@ -184,7 +181,6 @@ def visualize_class_images(root_dir, img_dir, label_dir, target_class=1):
         3: "red"       # tau_fragments
     }
 
-    # Walk through all subdirectories in the image directory
     for root, _, files in os.walk(os.path.join(root_dir, img_dir)):
         for file in files:
             if file.endswith('.png'):

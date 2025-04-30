@@ -35,7 +35,3 @@ if __name__ == "__main__":
                                 prepared_label_dir="labels")
 
     data_preparer.prepare_labels_for_yolo()
-
-    data_preparer.show_bboxes("train")
-
-    data_preparer.count_objects()
