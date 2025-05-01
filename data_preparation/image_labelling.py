@@ -1,7 +1,6 @@
 # Utility functions to handle image masks, extract bounding boxes, and visualise masks/bboxes.
 # Written with reference to https://pytorch.org/vision/0.11/auto_examples/plot_repurposing_annotations.html.
 
-import glob
 from tqdm import tqdm
 
 import torch
@@ -9,7 +8,7 @@ from torchvision.io import read_image
 from torchvision.ops import masks_to_boxes
 from torchvision.utils import draw_segmentation_masks, draw_bounding_boxes
 
-from data_preparation.data_utils import *
+from .data_utils import *
 
 
 def get_masks_from_mask(mask_path: os.path):
@@ -136,21 +135,23 @@ def bboxes_from_multiple_masks(mask_dir_path: os.path, out_dir, yolo=False):
         # show_bboxes(image_path, bboxes)
 
 
-def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False, device='cpu'):
+def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False):
     """
     Reads boxes from a txt file holding YOLO-format labels and outputs them in a tensor of
         (x_min, y_min, x_max, y_max) boxes along with class indices.
 
     Args:
         label_path: Path to a YOLO-format label .txt file
-        normalised: Whether to keep coordinates normalised or convert to pixel values (default: False)
-        device: Device to create tensors on (default: 'cpu')
 
     Returns:
         bboxes (Tensor[N, 4]): bbox coordinates extracted from label_path, in (x_min, y_min, x_max, y_max) format.
             Coordinates are unnormalised by default.
         labels (list[int]): Class index label for each bounding box
     """
+    device = (torch.device(f'cuda:{torch.cuda.current_device()}')
+              if torch.cuda.is_available()
+              else 'cpu')
+
     with open(label_path, "r") as f:
         # create an empty tensor
         bboxes = torch.FloatTensor().to(device)
@@ -159,7 +160,6 @@ def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False, devic
 
         for i, line in enumerate(f):
             line = line.strip().split(' ')
-
             x_centre = float(line[1])
             y_centre = float(line[2])
             width = float(line[3])
@@ -176,7 +176,7 @@ def bboxes_from_yolo_labels(label_path: os.path, normalised: bool = False, devic
                 y_min = (y_centre - (height / 2)) * 512
                 y_max = (y_centre + (height / 2)) * 512
 
-            new_bbox = torch.tensor([[x_min, y_min, x_max, y_max]], device=device)
+            new_bbox = torch.Tensor([[x_min, y_min, x_max, y_max]]).to(device)
 
             bboxes = torch.cat([bboxes, new_bbox], axis=0)
 

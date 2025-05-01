@@ -6,7 +6,7 @@ from data_preparation import data_utils
 import argparse
 import yaml
 import train_model.rcnn_scripts.run_train_rcnn as run_train_rcnn
-from confusion_matrix_utils import save_interactive_confusion_matrix
+from model_utils import save_interactive_confusion_matrix
 
 def main():
     parser = argparse.ArgumentParser()

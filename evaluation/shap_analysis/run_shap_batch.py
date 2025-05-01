@@ -1,7 +1,7 @@
 # runs SHAP analysis on a batch of images with a YOLO model.
 import os
 import argparse
-from shap_analysis import analyze_all_detections
+from evaluation.shap_analysis.shap_analysis import analyze_all_detections
 
 def main():
     # Dictionary mapping filenames to list of superpixel sizes
