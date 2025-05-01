@@ -1,25 +1,6 @@
-import seaborn as sn
-import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-
-def plot_confusion_matrix(confusion_matrix, class_names):
-    """Plot confusion matrix using seaborn"""
-    # Get the matrix data and resize it to match the number of classes
-    array = confusion_matrix.matrix
-    n_classes = len(class_names)
-    array = array[:n_classes, :n_classes]  # Take only the relevant classes
-
-    df_cm = pd.DataFrame(array, index=class_names, columns=class_names)
-
-    plt.figure(figsize=(10, 7))
-    sn.heatmap(df_cm, annot=True, fmt='g', cmap='Blues')
-    plt.xlabel('Predicted')
-    plt.ylabel('True')
-    plt.title('Confusion Matrix')
-    plt.show()
 
 def save_interactive_confusion_matrix(model, data_yaml, class_names, save_path, iou_thresh=0.5, conf_range=None):
     """Create and save interactive confusion matrix plot as HTML

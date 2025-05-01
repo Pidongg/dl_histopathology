@@ -1,14 +1,8 @@
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True" 
-
 from ultralytics import YOLO
 import yaml
 import argparse
-import torch
 
 def main():
-    torch.cuda.empty_cache()
     parser = argparse.ArgumentParser()
     parser.add_argument("-pt",
                         help="Path to pretrained model",
