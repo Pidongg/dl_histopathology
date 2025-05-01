@@ -8,3 +8,9 @@
 [submodule "qupath-extension-djl"]
 	path = qupath-extension-djl
 	url = https://github.com/Pidongg/qupath-extension-djl.git
+[submodule "ultralytics"]
+	path = ultralytics
+	url = https://github.com/Pidongg/ultralytics.git
+[submodule "vision"]
+	path = vision
+	url = https://github.com/Pidongg/vision.git
