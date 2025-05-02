@@ -8,7 +8,7 @@ This repository contains tools and scripts for:
 
 ## Project Structure
 
-- **data_preparation/** - Scripts for processing and labeling histopathology data
+- **data_preparation/** - Scripts for processing images and labels of histopathology data
 - **train_model/** - Training scripts for YOLO11 and PyTorch Faster R-CNN models
 - **evaluation/** - Tools for model evaluation and traditional performance metrics
 - **qupath_scripts/** - QuPath integration scripts for data export and model inference
