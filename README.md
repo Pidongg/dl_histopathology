@@ -1,8 +1,8 @@
-#dl_histopathology
+# dl_histopathology
 
 This repository contains tools and scripts for:
 - Preparing custom tau histopathology slide dataset for deep learning tasks
-- Training object detection models (YOLOv8 and Faster R-CNN) on the histopathology images
+- Training object detection models (YOLO11 and Faster R-CNN) on the histopathology images
 - Evaluating model performance with traditional metrics (mAP, F1, confusion matrix) and PDQ
 - Enabling custom model inference on QuPath software
 
